@@ -3,4 +3,4 @@ uv.lock
 __pycache__
 *.jar
 *.whl
-
+env
