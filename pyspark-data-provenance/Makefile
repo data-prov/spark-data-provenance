@@ -24,6 +24,7 @@ update: ## Upgrade and sync dependencies
 	@$(UV) sync --all-groups
 
 build: ## Build project wheel
+	@rm -rf dist
 	@$(UV) build --wheel
 
 run: ## Run package demo

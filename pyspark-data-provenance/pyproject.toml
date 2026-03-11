@@ -1,6 +1,6 @@
 [project]
 name = "pyspark-data-provenance"
-version = "0.0.1"
+version = "0.0.2"
 description = "PySpark helper utilities for Spark data provenance"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -8,7 +8,7 @@ authors = [
     { name = "data-prov" },
 ]
 dependencies = [
-    "pyspark==4.0.0",
+    "pyspark>=4.0.0",
 ]
 
 [dependency-groups]
