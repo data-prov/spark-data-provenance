@@ -16,7 +16,7 @@ notebooks = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pyspark_data_provenance"]
-force-include = { "jars" = "pyspark_data_provenance/jars" }
+force-include = { "src/pyspark_data_provenance/jars" = "pyspark_data_provenance/jars" }
 
 [build-system]
 requires = ["hatchling>=1.25.0"]
