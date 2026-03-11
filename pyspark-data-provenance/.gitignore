@@ -1,6 +1,12 @@
 .venv
-uv.lock
 __pycache__
 *.jar
 *.whl
 env
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.ipynb_checkpoints
+dist
+build
+*.egg-info

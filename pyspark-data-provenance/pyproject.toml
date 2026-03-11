@@ -1,14 +1,22 @@
 [project]
 name = "pyspark-data-provenance"
 version = "0.0.1"
-description = "Add your description here"
+description = "PySpark helper utilities for Spark data provenance"
 readme = "README.md"
 requires-python = ">=3.12"
+authors = [
+    { name = "data-prov" },
+]
 dependencies = [
     "pyspark==4.0.0",
 ]
 
 [dependency-groups]
+dev = [
+    "mypy>=1.18.0",
+    "pytest>=8.4.0",
+    "ruff>=0.13.0",
+]
 notebooks = [
     "ipykernel>=7.2.0",
     "pandas>=3.0.1",
@@ -16,8 +24,20 @@ notebooks = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pyspark_data_provenance"]
-force-include = { "src/pyspark_data_provenance/jars" = "pyspark_data_provenance/jars" }
 
 [build-system]
 requires = ["hatchling>=1.25.0"]
 build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["notebooks"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true

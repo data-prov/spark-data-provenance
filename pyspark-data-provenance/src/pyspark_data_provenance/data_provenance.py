@@ -1,13 +1,14 @@
 import os
 from contextlib import contextmanager
+from typing import Iterator
 
 from pyspark.sql import SparkSession
 
 
 @contextmanager
-def data_provenance_enabled(spark: SparkSession):
+def data_provenance_enabled(spark: SparkSession) -> Iterator[None]:
     # Remember the previous state in case these are nested
-    is_data_provenance_enabled = spark.conf.get("spark.provenance.enabled", "false")
+    is_data_provenance_enabled = str(spark.conf.get("spark.provenance.enabled", "false"))
     try:
         # Turn data provenance on for this block
         spark.conf.set("spark.provenance.enabled", "true")
