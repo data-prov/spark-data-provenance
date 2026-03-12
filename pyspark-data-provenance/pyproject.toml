@@ -1,6 +1,6 @@
 [project]
 name = "pyspark-data-provenance"
-version = "0.0.3.dev5"
+version = "0.0.3.dev6"
 description = "PySpark helper utilities for Spark data provenance"
 readme = "README.md"
 requires-python = ">=3.12"

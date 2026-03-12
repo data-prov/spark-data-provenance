@@ -1291,7 +1291,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/19/bf/58ee13add151469c2
 
 [[package]]
 name = "pyspark-data-provenance"
-version = "0.0.3.dev5"
+version = "0.0.3.dev6"
 source = { editable = "." }
 
 [package.dev-dependencies]
