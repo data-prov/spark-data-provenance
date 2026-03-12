@@ -81,6 +81,10 @@ publish: require-uv-publish-token ## Publish built artifacts to PyPI
 	@$(UV) publish
 	@echo "The Python package has been published on $(PYPI_PROJECT_URL)"
 
+publish-from-ci: ## Publish built artifacts to PyPI from GitHub Actions
+	@$(UV) publish
+	@echo "The Python package has been published on $(PYPI_PROJECT_URL)"
+
 publish-testpypi: ## Publish built artifacts to TestPyPI
 	@$(UV) publish --publish-url https://test.pypi.org/legacy/
 
