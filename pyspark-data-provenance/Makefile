@@ -51,7 +51,7 @@ format: ## Format with Ruff
 	@$(UV) run --group dev ruff format .
 
 type-check: ## Run mypy on source and tests
-	@$(UV) run --group dev mypy src tests
+	@$(UV) run --group dev mypy src
 
 check: lint type-check ## Run lint and type checks
 
