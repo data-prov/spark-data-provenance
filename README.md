@@ -1,5 +1,15 @@
 # Fine-grained data provenance for Spark
 
+## Table of Content (ToC)
+
+* [Fine\-grained data provenance for Spark](#fine-grained-data-provenance-for-spark)
+  * [Table of Content (ToC)](#table-of-content-toc)
+  * [Overview](#overview)
+  * [References](#references)
+  * [Getting started](#getting-started)
+
+Created by [gh-md-toc](https://github.com/ekalinin/github-markdown-toc.go)
+
 ## Overview
 
 This [project](https://github.com/data-prov/spark-data-provenance)
@@ -14,6 +24,9 @@ these companies.
 
 * [GitHub - Data Provenance - Spark (this Git repository)](https://github.com/data-prov/spark-data-provenance)
 * [Pypi.org - pyspark-data-provenance package](https://pypi.org/project/pyspark-data-provenance/)
+* [Data Engineering Helpers - Knowledge Sharing - Python](https://github.com/data-engineering-helpers/ks-cheat-sheets/blob/main/programming/python/)
+* [Data Engineering Helpers - Knowledge Sharing - Jupyter, PySpark and DuckDB](https://github.com/data-engineering-helpers/ks-cheat-sheets/blob/main/programming/jupyter/jupyter-pyspark-duckdb/)
+* [Data Engineering Helpers - Knowledge Sharing - Spark](https://github.com/data-engineering-helpers/ks-cheat-sheets/blob/main/data-processing/spark/)
 
 ## Getting started
 
