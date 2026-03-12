@@ -12,6 +12,7 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    environment: release
     defaults:
       run:
         working-directory: pyspark-data-provenance
@@ -31,3 +32,4 @@ jobs:
 
       - name: Publish package
         run: make publish
+
