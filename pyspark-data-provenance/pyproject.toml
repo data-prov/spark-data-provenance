@@ -1,0 +1,79 @@
+[project]
+name = "pyspark-data-provenance"
+version = "0.0.3.dev6"
+description = "PySpark helper utilities for Spark data provenance"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [
+    { name = "data-prov" },
+]
+urls = {repository = "https://github.com/data-prov/spark-data-provenance"}
+
+dependencies = [
+]
+
+[project.scripts]
+getting_started_job = "pyspark_data_provenance.jobs.getting_started_job:main"
+
+[build-system]
+requires = ["uv_build>=0.10,<0.11"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+  "packaging",
+  "coverage",
+  "ipykernel",
+  "mypy",
+  "myst-parser",
+  "pandera",
+  "pydantic",
+  "pre-commit",
+  "ruff",
+  "pyspark",
+  "pyspark-test",
+  "pytest",
+  "pytest-spark",
+  "pytest-cov",
+  "setuptools",
+  "sphinx",
+  "sphinx-rtd-theme",
+  "toml",
+  "twine",
+]
+lint = [
+  "ruff"
+]
+notebooks = [
+  "ipykernel>=7.2.0",
+  "pandas>=3.0.1",
+]
+
+[tool.coverage.run]
+branch = true
+source = [ "." ]
+
+[tool.coverage.report]
+omit = [ "src/tests/*" ]
+
+[tool.ruff]
+src = ["src"]
+line-length = 120
+extend-exclude = ["notebooks"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "Q", "I"]
+ignore = ["E203", "E501", "E712"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.mypy]
+ignore_missing_imports = true
+plugins = [ "pandera.mypy", "pydantic.mypy" ]
+mypy_path = "src/pyspark_data_provenance/"
+explicit_package_bases = true
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+

@@ -1,0 +1,20 @@
+# Python
+.venv
+__pycache__
+*.whl
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.ipynb_checkpoints
+dist
+build
+*.egg-info
+
+# Env
+env
+
+# JAR
+*.jar
+
+# Logs
+logs/
