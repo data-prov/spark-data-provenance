@@ -1,10 +1,21 @@
+#
+# https://github.com/data-prov/spark-data-provenance/blob/main/pyspark-data-provenance/Makefile
+#
+
 PYTHON_VERSION ?= 3.12
 UV ?= uv
-PACKAGE_NAME ?= pyspark-data-provenance
-PYPI_PROJECT_URL ?= https://pypi.org/project/$(PACKAGE_NAME)/
+PYTHON_PACKAGE_NAME ?= pyspark-data-provenance
+PYTHON_PACKAGE_VERSION ?= $(shell cat VERSION)
+SCALA_MINOR_VERSION ?= $(shell cat ../scala-spark-data-provenance/SCALA_MINOR_VERSION)
+SCALA_ORG ?= org.dataprov.dp
+SCALA_PACKAGE_NAME ?= dp-spark
+SCALA_PACKAGE_VERSION ?= $(shell cat ../scala-spark-data-provenance/VERSION)
+SCALA_PACKAGE_JAR ?= $(SCALA_ORG):$(SCALA_PACKAGE_NAME)_$(SCALA_MINOR_VERSION):$(SCALA_PACKAGE_VERSION)
+
+PYPI_PROJECT_URL ?= https://pypi.org/project/$(PYTHON_PACKAGE_NAME)/
 UV_PUBLISH_DOC_URL ?= https://docs.astral.sh/uv/guides/package/\#publishing-your-package
 
-.PHONY: help init-uv-python init update build run test lint format type-check check clean require-uv-publish-token publish publish-testpypi
+.PHONY: help init-uv-python init update build install-local run-local test lint fix format type-check check clean require-uv-publish-token publish publish-testpypi
 
 help: ## Show this help message
 	@echo "Usage: make [target]"
@@ -23,12 +34,12 @@ update: ## Upgrade and sync dependencies
 	@$(UV) lock --upgrade
 	@$(UV) sync --all-groups
 
+bump-package: ## Bump the package version of the project.
+	@sed -i.bak 's/^version = .*/version = "$(PYTHON_PACKAGE_VERSION)"/' pyproject.toml && rm pyproject.toml.bak
+
 build: ## Build project wheel
 	@rm -rf dist
 	@$(UV) build --wheel
-
-run: ## Run package demo
-	@$(UV) run main.py
 
 test: ## Run tests
 	@$(UV) run --group dev pytest
@@ -43,6 +54,11 @@ type-check: ## Run mypy on source and tests
 	@$(UV) run --group dev mypy src tests
 
 check: lint type-check ## Run lint and type checks
+
+fix-lint: ## Fix linter issues
+	$(UV) run --group dev ruff check --fix .
+
+fix: fix-lint ## Fix linter and format issues
 
 clean: ## Remove caches and build artifacts
 	@rm -rf .venv dist build .pytest_cache .mypy_cache .ruff_cache
@@ -67,3 +83,15 @@ publish: require-uv-publish-token ## Publish built artifacts to PyPI
 
 publish-testpypi: ## Publish built artifacts to TestPyPI
 	@$(UV) publish --publish-url https://test.pypi.org/legacy/
+
+install-local: ## Install the Python wheel locally
+	@python -mpip install -U pyspark
+	@python -mpip install --force-reinstall \
+		$(PYTHON_PACKAGE_NAME)==$(PYTHON_PACKAGE_VERSION)
+
+run-local: ## Run package demo
+	@mkdir -p logs
+	@spark-submit --packages $(SCALA_PACKAGE_JAR) \
+		src/pyspark_data_provenance/jobs/getting_started_job.py | \
+		tee logs/getting_started_job.log
+

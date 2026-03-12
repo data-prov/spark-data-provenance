@@ -55,9 +55,8 @@ Before publishing to production PyPI with `make publish`, set your token:
 export UV_PUBLISH_TOKEN=<your-pypi-token>
 ```
 
-For details, see:
-
-https://docs.astral.sh/uv/guides/package/#publishing-your-package
+For details, see the
+[uv documentation](https://docs.astral.sh/uv/guides/package/#publishing-your-package)
 
 ## CI/CD
 

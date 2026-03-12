@@ -20,17 +20,17 @@ def data_provenance_enabled(spark: SparkSession) -> Iterator[None]:
 
 def build_data_provenance_session() -> SparkSession.Builder:
     """
-    Helper function to automatically find the bundled JAR 
+    Helper function to automatically find the bundled JAR
     and initialize a SparkSession with the plugin enabled.
     """
     # 1. Find the path to the 'jars' folder dynamically
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    jar_path = os.path.join(current_dir, "jars", "scala-spark-data-provenance_2.13-0.0.1.jar")
+    jar_path = os.path.join(current_dir, "jars", "dp-spark_2.13-0.0.1.jar")
 
     # 2. Build and return the SparkSession
     return (
         SparkSession
         .builder
         .config("spark.jars", jar_path)
-        .config("spark.sql.extensions", "io.github.dataprov.sparkdataprovenance.ProvenanceExtension")
+        .config("spark.sql.extensions", "org.dataprov.dp.ProvenanceExtension")
     )

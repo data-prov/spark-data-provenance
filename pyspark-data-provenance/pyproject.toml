@@ -1,43 +1,79 @@
 [project]
 name = "pyspark-data-provenance"
-version = "0.0.2"
+version = "0.0.3.dev4"
 description = "PySpark helper utilities for Spark data provenance"
 readme = "README.md"
 requires-python = ">=3.12"
 authors = [
     { name = "data-prov" },
 ]
+urls = {repository = "https://github.com/data-prov/spark-data-provenance"}
+
 dependencies = [
-    "pyspark>=4.0.0",
 ]
+
+[project.scripts]
+getting_started_job = "pyspark_data_provenance.jobs.getting_started_job:main"
+
+[build-system]
+requires = ["uv_build>=0.10,<0.11"]
+build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
-    "mypy>=1.18.0",
-    "pytest>=8.4.0",
-    "ruff>=0.13.0",
+  "packaging",
+  "coverage",
+  "ipykernel",
+  "mypy",
+  "myst-parser",
+  "pandera",
+  "pydantic",
+  "pre-commit",
+  "ruff",
+  "pyspark",
+  "pyspark-test",
+  "pytest",
+  "pytest-spark",
+  "pytest-cov",
+  "setuptools",
+  "sphinx",
+  "sphinx-rtd-theme",
+  "toml",
+  "twine",
+]
+lint = [
+  "ruff"
 ]
 notebooks = [
-    "ipykernel>=7.2.0",
-    "pandas>=3.0.1",
+  "ipykernel>=7.2.0",
+  "pandas>=3.0.1",
 ]
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/pyspark_data_provenance"]
+[tool.coverage.run]
+branch = true
+source = [ "." ]
 
-[build-system]
-requires = ["hatchling>=1.25.0"]
-build-backend = "hatchling.build"
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
+[tool.coverage.report]
+omit = [ "tests/*" ]
 
 [tool.ruff]
-line-length = 100
-target-version = "py312"
+src = ["src"]
+line-length = 120
 extend-exclude = ["notebooks"]
 
+[tool.ruff.lint]
+select = ["E", "F", "W", "Q", "I"]
+ignore = ["E203", "E501", "E712"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
 [tool.mypy]
-python_version = "3.12"
-strict = true
 ignore_missing_imports = true
+plugins = [ "pandera.mypy", "pydantic.mypy" ]
+mypy_path = "src/"
+explicit_package_bases = true
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+
