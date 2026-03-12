@@ -1,6 +1,23 @@
-# pyspark-data-provenance
+# PySpark - Fine-grained data provenance - PySpark part
 
-Python package in this monorepo for enabling Spark data provenance features in PySpark jobs.
+## Table of Content (ToC)
+
+* [PySpark \- Fine\-grained data provenance \- PySpark part](#pyspark---fine-grained-data-provenance---pyspark-part)
+  * [Table of Content (ToC)](#table-of-content-toc)
+  * [Overview](#overview)
+  * [Quick Start](#quick-start)
+  * [Project Layout](#project-layout)
+  * [Common commands](#common-commands)
+  * [Development life\-cycle](#development-life-cycle)
+  * [PyPI package](#pypi-package)
+  * [CI/CD](#cicd)
+
+Created by [gh-md-toc](https://github.com/ekalinin/github-markdown-toc.go)
+
+## Overview
+
+Python package in this monorepo for enabling Spark data provenance features
+in PySpark jobs.
 
 This project is managed with `uv`.
 
@@ -21,14 +38,14 @@ make run
 
 ```text
 pyspark-data-provenance/
-	src/pyspark_data_provenance/
-	tests/
-	main.py
-	pyproject.toml
-	Makefile
+    src/pyspark_data_provenance/
+    tests/
+    main.py
+    pyproject.toml
+    Makefile
 ```
 
-## Common Commands
+## Common commands
 
 * `make init` - Create/refresh lock file and sync dependencies
 * `make update` - Upgrade dependencies and sync environment
@@ -37,26 +54,69 @@ pyspark-data-provenance/
 * `make build` - Build package wheel
 * `make publish` - Publish package (PyPI)
 
-## PyPI Package
+## Development life-cycle
 
-The Python package is published on PyPI:
+* In order to switch (bump) to a newer
+  [version of the Python package](https://github.com/data-prov/spark-data-provenance/blob/main/pyspark-data-provenance/VERSION),
+  the following are the main options, ordered by the general probability of
+  occurrence in the development life-cycle, from the highest to the lowest)
+  * Increment the dev version (_e.g._, from `2.4.3.dev5` to `2.4.3.dev6` or
+  from `2.4.3` to `2.4.4.dev0`):
+  `make increment-dev-version`
+  * Bump to minor version (_e.g._, from `2.4.3.dev5` to `2.4.3`):
+  `make bump-to-minor-version`
+  * Bump to patch version (_e.g._, from `2.4.3.dev5` to `2.4.4`):
+  `make bump-to-patch-version`
+  * Bump to major version (_e.g._, from `2.4.3.dev5` to `3.0.0`):
+  `make bump-to-major-version`
+* Then, the version bump has to be cascaded to related files (typically,
+  [`pyproject.toml`](https://github.com/data-prov/spark-data-provenance/blob/main/pyspark-data-provenance/pyproject.toml))
 
-https://pypi.org/project/pyspark-data-provenance/
+## PyPI package
 
-You can install it with pip:
+* The
+  [Python package is published on PyPI](https://pypi.org/project/pyspark-data-provenance/)
+
+* Optionally, the Python wheel may be published manually onto
+  [Pypi.org](https://pypi.org/project/pyspark-data-provenance/)
+  * The `UV_PUBLISH_TOKEN` environment variable then needs to be specified
+  (see the
+  [uv documentation](https://docs.astral.sh/uv/guides/package/#publishing-your-package)
+  for further details)
 
 ```bash
-pip install pyspark-data-provenance
+make publish
 ```
 
-Before publishing to production PyPI with `make publish`, set your token:
+* However, the easiest way to publish the Python wheel is through the CI/CD
+  pipeline, that is, the
+  [GitHub Actions Python publishing pipeline](https://github.com/data-prov/spark-data-provenance/actions/workflows/python-publish.yml).
+  * That CI/CD pipeline is automatically triggered when creating a release on
+  the Git repository
+  * It may also be triggered manually by contributors of the Git repository
+
+* Check the versions of the Python wheel on
+  [Pypi.org](https://pypi.org/project/pyspark-data-provenance/)
+
+* Install the Python wheel locally, in the main/global Python environment
+  (as `spark-submit` does not seem to work properly with uv):
 
 ```bash
-export UV_PUBLISH_TOKEN=<your-pypi-token>
+make install-local
 ```
 
-For details, see the
-[uv documentation](https://docs.astral.sh/uv/guides/package/#publishing-your-package)
+* For information, that actually install the Python wheel with pip:
+
+```bash
+python -mpip install -U pyspark-data-provenance
+```
+
+* Run the PySpark job locally, in the main/global Python environment
+  (as `spark-submit` does not seem to work properly with uv):
+
+```bash
+make run-local
+```
 
 ## CI/CD
 

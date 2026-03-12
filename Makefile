@@ -27,6 +27,34 @@ python-clean:
 	$(MAKE) -C $(PY_DIR) clean
 	@echo "Python project cleaned."
 
+python-init-uv-python:
+	@echo "Initializing Python installation with uv..."
+	$(MAKE) -C $(PY_DIR) init-uv-python
+
+python-bump-package:
+	@echo "Bumping the Python package version..."
+	$(MAKE) -C $(PY_DIR) bump-package
+
+python-bump-to-major-version:
+	@echo "[Python] Bumping to the major version and then into related files..."
+	$(MAKE) -C $(PY_DIR) bump-to-major-version
+	$(MAKE) -C $(PY_DIR) bump-package
+
+python-bump-to-minor-version:
+	@echo "[Python] Bumping to the minor version and then into related files..."
+	$(MAKE) -C $(PY_DIR) bump-to-minor-version
+	$(MAKE) -C $(PY_DIR) bump-package
+
+python-bump-to-patch-version:
+	@echo "[Python] Bumping to the patch version and then into related files..."
+	$(MAKE) -C $(PY_DIR) bump-to-patch-version
+	$(MAKE) -C $(PY_DIR) bump-package
+
+python-increment-dev-version:
+	@echo "[Python] Incrementing the package version and bumping it into related files..."
+	$(MAKE) -C $(PY_DIR) increment-dev-version
+	$(MAKE) -C $(PY_DIR) bump-package
+
 python-init:
 	@echo "Initializing Python project..."
 	$(MAKE) -C $(PY_DIR) init update
