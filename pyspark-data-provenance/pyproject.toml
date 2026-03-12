@@ -1,6 +1,6 @@
 [project]
 name = "pyspark-data-provenance"
-version = "0.0.3.dev4"
+version = "0.0.3.dev5"
 description = "PySpark helper utilities for Spark data provenance"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -54,7 +54,7 @@ branch = true
 source = [ "." ]
 
 [tool.coverage.report]
-omit = [ "tests/*" ]
+omit = [ "src/tests/*" ]
 
 [tool.ruff]
 src = ["src"]
@@ -71,7 +71,7 @@ convention = "google"
 [tool.mypy]
 ignore_missing_imports = true
 plugins = [ "pandera.mypy", "pydantic.mypy" ]
-mypy_path = "src/"
+mypy_path = "src/pyspark_data_provenance/"
 explicit_package_bases = true
 
 [tool.pytest.ini_options]
