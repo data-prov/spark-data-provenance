@@ -6,15 +6,15 @@ name := "dp-spark"
 organization := "org.dataprov.dp"
 organizationName := "Fine-grained data provenance"
 organizationHomepage := Some(url("http://github.com/data-prov"))
-homepage := Some(url("https://github.com/data-prov/park-data-provenance"))
+homepage := Some(url("https://github.com/data-prov/spark-data-provenance"))
 startYear := Some(2026)
 description := "Spark library for fine-grained provenance"
 licenses += "Apache-2.0" -> url("https://www.apache.org/licenses/LICENSE-2.0")
 
 scmInfo := Some(
   ScmInfo(
-    url("https://github.com/data-prov/park-data-provenance"),
-    "https://github.com/data-prov/park-data-provenance.git"
+    url("https://github.com/data-prov/spark-data-provenance"),
+    "https://github.com/data-prov/spark-data-provenance.git"
   )
 )
 
@@ -24,6 +24,12 @@ developers := List(
     name  = "Denis Arnaud",
     email = "denis.arnaud_ossrh@m4x.org",
     url   = url("https://github.com/da115115")
+  ),
+  Developer(
+    id    = "ronan.fruit",
+    name  = "Ronan Fruit",
+    email = "ronan@fruit.nom.fr",
+    url   = url("https://github.com/RonanFR")
   )
 )
 
