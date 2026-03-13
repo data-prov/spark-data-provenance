@@ -9,7 +9,7 @@ organizationHomepage := Some(url("http://github.com/data-prov"))
 homepage := Some(url("https://github.com/data-prov/spark-data-provenance"))
 startYear := Some(2026)
 description := "Spark library for fine-grained provenance"
-licenses += "Apache-2.0" -> url("https://www.apache.org/licenses/LICENSE-2.0")
+licenses += "MIT" -> url("https://opensource.org/license/mit")
 
 scmInfo := Some(
   ScmInfo(
