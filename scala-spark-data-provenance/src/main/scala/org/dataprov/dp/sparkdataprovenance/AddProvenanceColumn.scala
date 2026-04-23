@@ -26,6 +26,11 @@ case class AddProvenanceColumn(spark: SparkSession) extends Rule[LogicalPlan] {
   def hasProv(plan: LogicalPlan): Boolean = 
     plan.output.exists(_.name == PROV_COL)
 
+  // Find the provenance attribute in a plan
+  def getProvAttr(plan: LogicalPlan) = 
+    plan.output.find(_.name == PROV_COL).get
+
+  // Provenance tag
   val PROV_COL = "_provenance_tag"
 
   override def apply(plan: LogicalPlan): LogicalPlan = {
@@ -34,10 +39,7 @@ case class AddProvenanceColumn(spark: SparkSession) extends Rule[LogicalPlan] {
       return plan // If the feature is not enabled, return the plan unchanged
     }
     
-    // Find the provenance attribute in a plan
-    def getProvAttr(plan: LogicalPlan) = 
-      plan.output.find(_.name == PROV_COL)
-
+    
     // transformUp traverses the tree from the bottom leaves to the top root
     plan.transformUp {
       
@@ -50,10 +52,12 @@ case class AddProvenanceColumn(spark: SparkSession) extends Rule[LogicalPlan] {
         if (hasProv(p)) {
           p // Return the node unchanged
         } else {
-          val taggedChild = ensureProv(child) // Enveloppe l'enfant (ex: la View) s'il n'a pas de tag
+          val taggedChild = ensureProv(child) 
+
           // Create a new literal string column named '_provenance_tag_select'
           // val provenanceCol = Alias(Concat(Seq(Cast(MonotonicallyIncreasingID(), StringType))), PROV_COL)()
-          val tagExpr = getProvAttr(taggedChild).get
+          val tagExpr = getProvAttr(taggedChild)
+
           // Return a new Project node with our column appended to the list
           //Project(projectList :+ provenanceCol, child)
           p.copy(projectList = projectList :+ tagExpr, child = taggedChild)
@@ -64,17 +68,22 @@ case class AddProvenanceColumn(spark: SparkSession) extends Rule[LogicalPlan] {
         if (hasProv(j)) {
           j // Return the node unchanged
         } else{
-          // We search the provenance tag in each table
+          // We search the provenance tag in each child
           val taggedLeft = ensureProv(left)
           val taggedRight = ensureProv(right)
 
-          val leftTag = getProvAttr(taggedLeft).get
-          val rightTag = getProvAttr(taggedRight).get
+          // We recover the provenance tag in each child
+          val leftTag = getProvAttr(taggedLeft)
+          val rightTag = getProvAttr(taggedRight)
 
+          // We create a new tag by combining the tags of the children
           val combinedTag = Alias(Concat(Seq(Literal("("), leftTag, Literal(" ⊗ "), rightTag, Literal(")"))),PROV_COL)()
+          // The join is changed with tagged children
           val newJoin = j.copy(left = taggedLeft, right = taggedRight)
-          val cleanedOutput = newJoin.output.filter(_.name != PROV_COL)
 
+          // We clean the output to ensure having a unique provenance tag
+          val cleanedOutput = newJoin.output.filter(_.name != PROV_COL)
+          // The result is a new 'Project' tagged 
           Project(cleanedOutput :+ combinedTag, newJoin)
           
         }
@@ -84,11 +93,14 @@ case class AddProvenanceColumn(spark: SparkSession) extends Rule[LogicalPlan] {
         if (hasProv(a)) {
           a
         } else {
+          // We ensure the child is tagged and we recover the provenance tag
           val taggedChild = ensureProv(child)
-          val childTag = getProvAttr(child).get
-
+          val childTag = getProvAttr(child)
+          // We recover the aggregate expression
           val collectSet = AggregateExpression(CollectSet(childTag), Complete, isDistinct = false)
+          // We create a new tag by combining the tags of the children
           val combinedTag = Alias(Concat(Seq(Literal("{"), ConcatWs(Seq(Literal(" ⊕ "), collectSet)), Literal("}"))), PROV_COL)()
+          // The aggregation is modified with the new tag
           a.copy(child = taggedChild, aggregateExpressions = aggExprs :+ combinedTag)
         }
 
