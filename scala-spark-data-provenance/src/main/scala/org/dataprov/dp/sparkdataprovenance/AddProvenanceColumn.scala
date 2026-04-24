@@ -89,13 +89,13 @@ case class AddProvenanceColumn(spark: SparkSession) extends Rule[LogicalPlan] {
         }
   
       // We look for 'Aggregate' nodes, which represent Aggregate statements
-      case a @ Aggregate(groupingExprs, aggExprs, child, hint) if (hasProv(child)) =>
+      case a @ Aggregate(groupingExprs, aggExprs, child, hint)  =>
         if (hasProv(a)) {
           a
         } else {
           // We ensure the child is tagged and we recover the provenance tag
           val taggedChild = ensureProv(child)
-          val childTag = getProvAttr(child)
+          val childTag = getProvAttr(taggedChild)
           // We recover the aggregate expression
           val collectSet = AggregateExpression(CollectSet(childTag), Complete, isDistinct = false)
           // We create a new tag by combining the tags of the children
