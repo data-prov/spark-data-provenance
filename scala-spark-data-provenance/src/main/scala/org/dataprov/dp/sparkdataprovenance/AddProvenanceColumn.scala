@@ -54,6 +54,7 @@ case class AddProvenanceColumn(spark: SparkSession) extends Rule[LogicalPlan] {
         if (hasProv(p)) {
           p // Return the node unchanged
         } else {
+          // We ensure the child is tagged with provenance
           val taggedChild = ensureProv(child) 
 
           // Create a new literal string column named '_provenance_tag_select'
@@ -74,17 +75,17 @@ case class AddProvenanceColumn(spark: SparkSession) extends Rule[LogicalPlan] {
         if (j.getTagValue(PROCESSED_TAG).contains(true)) {
           j // Return the node unchanged
         } else {
-          // We search the provenance tag in each child
+          // We ensure both sides of the join are tagged with provenance
           val taggedLeft = ensureProv(left)
           val taggedRight = ensureProv(right)
 
-          // We recover the provenance tag in each child
+          // We recover the provenance tags of the children
           val leftTag = getProvAttr(taggedLeft)
           val rightTag = getProvAttr(taggedRight)
 
           // We create a new tag by combining the tags of the children
           val matchedTag = Concat(Seq(Literal("("), leftTag, Literal(" ⊗ "), rightTag, Literal(")")))
-          
+
           val joinLogicExpr = If(
             IsNull(leftTag),
             rightTag, // If the left tag is null (Right Outer Join), we keep the right one
@@ -114,7 +115,7 @@ case class AddProvenanceColumn(spark: SparkSession) extends Rule[LogicalPlan] {
         if (hasProv(a)) {
           a // Return the node unchanged
         } else {
-          // We ensure the child is tagged and we recover the provenance tag
+          // We ensure the child is tagged
           val taggedChild = ensureProv(child)
           val childTag = getProvAttr(taggedChild)
 
@@ -127,11 +128,15 @@ case class AddProvenanceColumn(spark: SparkSession) extends Rule[LogicalPlan] {
           a.copy(child = taggedChild, aggregateExpressions = aggExprs :+ combinedTag)
         }
 
-      case f @ Filter(condition, child) if (hasProv(child)) => f
+      // We look for 'Filter' nodes, which represent WHERE statements
+      case f @ Filter(condition, child) if (hasProv(child)) => f 
 
+      // We look for 'Sort' nodes, which represent ORDER BY statements
       case s @ Sort(order, global, child, hint)  => s
 
       // We look for 'Distinct' nodes, which represent Distinct statements
+      // We treat Distinct as a special case of Aggregate with all columns as 
+      // grouping columns and the same tag logic as Aggregate
       case d @ Distinct(child) => 
         // We ensure the child is tagged 
         val taggedChild = ensureProv(child)
