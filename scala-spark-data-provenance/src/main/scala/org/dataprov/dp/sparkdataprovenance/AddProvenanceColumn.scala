@@ -1,15 +1,14 @@
 package org.dataprov.dp
 
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, Project, Join, Filter, Aggregate, LeafNode, Sort}
-import org.apache.spark.sql.catalyst.expressions.{Alias, Literal, MonotonicallyIncreasingID, Multiply, Concat, ConcatWs, Cast, Expression }
+import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, Project, Join, Filter, Aggregate, LeafNode, Sort, Distinct}
+import org.apache.spark.sql.catalyst.expressions.{Alias, Literal, MonotonicallyIncreasingID, Multiply, Concat, ConcatWs, Cast, Expression, IsNull, If}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{Complete, Sum, AggregateExpression, CollectSet}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.dsl.plans.DslLogicalPlan
 import org.apache.spark.sql.types.StringType
 import org.apache.spark.sql.functions.concat_ws
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
-import org.apache.spark.sql.catalyst.plans.logical.Distinct
 
 case class AddProvenanceColumn(spark: SparkSession) extends Rule[LogicalPlan] {
 
@@ -32,12 +31,13 @@ case class AddProvenanceColumn(spark: SparkSession) extends Rule[LogicalPlan] {
     plan.output.find(_.name == PROV_COL).get
 
   // Provenance tag
-  val PROV_COL = "_provenance_tagged"
+  val PROV_COL = "_provenance_tag"
+  val PROCESSED_TAG = TreeNodeTag[Boolean]("provenance_processed")
 
-  override def apply(plan: LogicalPlan): LogicalPlan = {
+  override def apply(plan: LogicalPlan) = {
     val isEnabled = spark.sessionState.conf.getConfString("spark.provenance.enabled", "false")
     if (isEnabled != "true"|| !plan.resolved) {
-      return plan // If the feature is not enabled, return the plan unchanged
+      plan // If the feature is not enabled, return the plan unchanged
     }
     
     
@@ -66,9 +66,13 @@ case class AddProvenanceColumn(spark: SparkSession) extends Rule[LogicalPlan] {
 
       // We look for 'Join' nodes, which represent JOIN statements
       case j @ Join(left, right, joinType, condition, hint) =>
-        if (hasProv(j)) {
+        // CRITICAL: Catalyst runs rules repeatedly until the plan stops changing. 
+        // We must check if we already added our column to avoid an infinite loop!
+        // Do not use 'hasProv' here because the join itself does not have the provenance column, 
+        // it is added in the parent 'Project' node. We use a custom tag to mark that we already processed this join.
+        if (j.getTagValue(PROCESSED_TAG).contains(true)) {
           j // Return the node unchanged
-        } else{
+        } else {
           // We search the provenance tag in each child
           val taggedLeft = ensureProv(left)
           val taggedRight = ensureProv(right)
@@ -78,15 +82,31 @@ case class AddProvenanceColumn(spark: SparkSession) extends Rule[LogicalPlan] {
           val rightTag = getProvAttr(taggedRight)
 
           // We create a new tag by combining the tags of the children
-          val combinedTag = Alias(Concat(Seq(Literal("("), leftTag, Literal(" ⊗ "), rightTag, Literal(")"))),PROV_COL)()
+          val matchedTag = Concat(Seq(Literal("("), leftTag, Literal(" ⊗ "), rightTag, Literal(")")))
+          
+          val joinLogicExpr = If(
+            IsNull(leftTag),
+            rightTag, // If the left tag is null (Right Outer Join), we keep the right one
+            If(
+              IsNull(rightTag),
+              leftTag, // If the right tag is null (Left Outer Join), we keep the left one
+              matchedTag // Otherwise, we combine the two (Match found)
+            )
+          )
+
+          val combinedTag = Alias(joinLogicExpr, PROV_COL)()
+
           // The join is changed with tagged children
           val newJoin = j.copy(left = taggedLeft, right = taggedRight)
 
+          // We mark the join as processed to avoid infinite loops
+          newJoin.setTagValue(PROCESSED_TAG, true)
+
           // We clean the output to ensure having a unique provenance tag
           val cleanedOutput = newJoin.output.filter(_.name != PROV_COL)
+
           // The result is a new 'Project' tagged 
           Project(cleanedOutput :+ combinedTag, newJoin)
-          
         }
   
       // We look for 'Aggregate' nodes, which represent Aggregate statements
@@ -97,8 +117,10 @@ case class AddProvenanceColumn(spark: SparkSession) extends Rule[LogicalPlan] {
           // We ensure the child is tagged and we recover the provenance tag
           val taggedChild = ensureProv(child)
           val childTag = getProvAttr(taggedChild)
+
           // We recover the aggregate expression
           val collectSet = AggregateExpression(CollectSet(childTag), Complete, isDistinct = false)
+          
           // We create a new tag by combining the tags of the children
           val combinedTag = Alias(Concat(Seq(Literal("{"), ConcatWs(Seq(Literal(" ⊕ "), collectSet)), Literal("}"))), PROV_COL)()
           // The aggregation is modified with the new tag
