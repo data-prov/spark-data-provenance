@@ -129,10 +129,12 @@ case class AddProvenanceColumn(spark: SparkSession) extends Rule[LogicalPlan] {
         }
 
       // We look for 'Filter' nodes, which represent WHERE statements
-      case f @ Filter(condition, child) if (hasProv(child)) => f 
-
+      case f @ Filter(condition, child) => 
+        if (hasProv(f)) f else f.copy(child = ensureProv(child))
+        
       // We look for 'Sort' nodes, which represent ORDER BY statements
-      case s @ Sort(order, global, child, hint)  => s
+      case s @ Sort(order, global, child, hint) => 
+        if (hasProv(s)) s else s.copy(child = ensureProv(child))
 
       // We look for 'Distinct' nodes, which represent Distinct statements
       // We treat Distinct as a special case of Aggregate with all columns as 
