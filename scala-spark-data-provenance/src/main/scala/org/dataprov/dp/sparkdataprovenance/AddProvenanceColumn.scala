@@ -32,6 +32,7 @@ case class AddProvenanceColumn(spark: SparkSession) extends Rule[LogicalPlan] {
 
   // Provenance tag
   val PROV_COL = "_provenance_tag"
+  // Custom tag to mark that a join has been processed to avoid infinite loops
   val PROCESSED_TAG = TreeNodeTag[Boolean]("provenance_processed")
 
   override def apply(plan: LogicalPlan) = {
@@ -60,7 +61,7 @@ case class AddProvenanceColumn(spark: SparkSession) extends Rule[LogicalPlan] {
           val tagExpr = getProvAttr(taggedChild)
 
           // Return a new Project node with our column appended to the list
-          //Project(projectList :+ provenanceCol, child)
+          // Project(projectList :+ provenanceCol, child)
           p.copy(projectList = projectList :+ tagExpr, child = taggedChild)
         } 
 
@@ -93,7 +94,6 @@ case class AddProvenanceColumn(spark: SparkSession) extends Rule[LogicalPlan] {
               matchedTag // Otherwise, we combine the two (Match found)
             )
           )
-
           val combinedTag = Alias(joinLogicExpr, PROV_COL)()
 
           // The join is changed with tagged children
