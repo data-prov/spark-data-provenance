@@ -9,6 +9,7 @@ import org.apache.spark.sql.catalyst.dsl.plans.DslLogicalPlan
 import org.apache.spark.sql.types.StringType
 import org.apache.spark.sql.functions.concat_ws
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
+import org.apache.spark.sql.catalyst.plans.logical.Distinct
 
 case class AddProvenanceColumn(spark: SparkSession) extends Rule[LogicalPlan] {
 
@@ -31,7 +32,7 @@ case class AddProvenanceColumn(spark: SparkSession) extends Rule[LogicalPlan] {
     plan.output.find(_.name == PROV_COL).get
 
   // Provenance tag
-  val PROV_COL = "_provenance_tag"
+  val PROV_COL = "_provenance_tagged"
 
   override def apply(plan: LogicalPlan): LogicalPlan = {
     val isEnabled = spark.sessionState.conf.getConfString("spark.provenance.enabled", "false")
@@ -91,7 +92,7 @@ case class AddProvenanceColumn(spark: SparkSession) extends Rule[LogicalPlan] {
       // We look for 'Aggregate' nodes, which represent Aggregate statements
       case a @ Aggregate(groupingExprs, aggExprs, child, hint)  =>
         if (hasProv(a)) {
-          a
+          a // Return the node unchanged
         } else {
           // We ensure the child is tagged and we recover the provenance tag
           val taggedChild = ensureProv(child)
@@ -107,8 +108,29 @@ case class AddProvenanceColumn(spark: SparkSession) extends Rule[LogicalPlan] {
       case f @ Filter(condition, child) if (hasProv(child)) => f
 
       case s @ Sort(order, global, child, hint)  => s
-                
-      
+
+      // We look for 'Distinct' nodes, which represent Distinct statements
+      case d @ Distinct(child) => 
+        // We ensure the child is tagged 
+        val taggedChild = ensureProv(child)
+        val childTag = getProvAttr(taggedChild)
+
+        // The columns of grouping must be all the columns of the child except the provenance column.
+        val groupingCols = taggedChild.output.filter(_.name != PROV_COL)
+
+        // We use the same logic as aggregation to merge the tags(A ⊕ B)
+        val collectSet = AggregateExpression(CollectSet(childTag), Complete, isDistinct = false)
+        val combinedTag = Alias(Concat(Seq(Literal("{"), ConcatWs(Seq(Literal(" ⊕ "), collectSet)), Literal("}"))), PROV_COL)()
+        
+        // We replace the Distinct node with an Aggregate node with
+        // the same grouping columns and the new tag as aggregate expression
+        Aggregate(
+          groupingExpressions = groupingCols,
+          aggregateExpressions = groupingCols :+ combinedTag,
+          child = taggedChild
+        )
+        
+
     }
   }
 }
