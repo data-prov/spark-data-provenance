@@ -1,11 +1,15 @@
 from .data_provenance import (
-    build_data_provenance_session as build_data_provenance_session,
-)
-from .data_provenance import (
-    data_provenance_enabled as data_provenance_enabled,
-)
-from .data_provenance import (
-    provenance_column_name as provenance_column_name,
+    add_provenance_column,
+    data_provenance_enabled,
+    data_provenance_session_builder,
+    provenance_column_name,
+    remove_provenance_column,
 )
 
-__all__ = ["data_provenance_enabled", "build_data_provenance_session", "provenance_column_name"]
+__all__ = [
+    "provenance_column_name",
+    "add_provenance_column",
+    "remove_provenance_column",
+    "data_provenance_enabled",
+    "data_provenance_session_builder",
+]

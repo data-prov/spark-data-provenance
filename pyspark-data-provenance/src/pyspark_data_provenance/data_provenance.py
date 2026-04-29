@@ -1,73 +1,98 @@
 import os
+import typing as T
 from contextlib import contextmanager
-from typing import Iterator
 
 from pyspark.sql import DataFrame, SparkSession
+
+from pyspark_data_provenance.py4j_utils import _get_provenance_jvm_function
+
+DataFrameOrView = str | DataFrame
 
 
 def provenance_column_name(spark: SparkSession) -> str:
     """
-    Helper function to get the name of the provenance column from the Spark configuration.
-    This is useful to avoid hardcoding the column name in the code and to allow users to customize it.
+    Returns the name of the provenance column from the Spark configuration.
     """
-    return spark._jvm.org.dataprov.dp.sparkdataprovenance.DataFrameProvenanceTransformations.provenanceColumnName(
-        spark._jsparkSession
-    )
+    return _get_provenance_jvm_function("provenanceColumnName", spark)(spark._jsparkSession)
 
 
-def add_provenance_column(df_or_name: str | DataFrame, spark: SparkSession):
+@T.overload
+def add_provenance_column(df_or_view: str, spark: SparkSession) -> str: ...
+
+
+@T.overload
+def add_provenance_column(df_or_view: DataFrame, spark: SparkSession) -> DataFrame: ...
+
+
+def add_provenance_column(df_or_view: DataFrameOrView, spark: SparkSession) -> DataFrameOrView:
     """
     Adds a provenance column to the given DataFrame.
-    This is a helper function that can be used in tests to verify that the plugin is working.
     """
-    jfunction = spark._jvm.org.dataprov.dp.sparkdataprovenance.DataFrameProvenanceTransformations.addProvenanceColumn
-    match df_or_name:
+    jfunction = _get_provenance_jvm_function("addProvenanceColumn", spark)
+    match df_or_view:
         case str():
-            jfunction(spark._jsparkSession, df_or_name)
-            return df_or_name
+            jfunction(spark._jsparkSession, df_or_view)
+            return df_or_view
         case DataFrame():
-            return DataFrame(jfunction(df_or_name._jdf), spark)
+            return DataFrame(jfunction(df_or_view._jdf), spark)
+        case _:
+            raise TypeError("df_or_view must be a str or a DataFrame")
 
 
-def remove_provenance_column(df_or_name: str | DataFrame, spark: SparkSession):
+@T.overload
+def remove_provenance_column(df_or_view: str, spark: SparkSession) -> str: ...
+
+
+@T.overload
+def remove_provenance_column(df_or_view: DataFrame, spark: SparkSession) -> DataFrame: ...
+
+
+def remove_provenance_column(df_or_view: DataFrameOrView, spark: SparkSession) -> DataFrameOrView:
     """
     Removes the provenance column from the given DataFrame.
-    This is a helper function that can be used in tests to verify that the plugin is working.
     """
-    jfunction = spark._jvm.org.dataprov.dp.sparkdataprovenance.DataFrameProvenanceTransformations.removeProvenanceColumn
-    match df_or_name:
+    jfunction = _get_provenance_jvm_function("removeProvenanceColumn", spark)
+    match df_or_view:
         case str():
-            jfunction(spark._jsparkSession, df_or_name)
-            return df_or_name
+            jfunction(spark._jsparkSession, df_or_view)
+            return df_or_view
         case DataFrame():
-            return DataFrame(jfunction(df_or_name._jdf), spark)
+            return DataFrame(jfunction(df_or_view._jdf), spark)
+        case _:
+            raise TypeError("df_or_view must be a str or a DataFrame")
 
 
 @contextmanager
-def data_provenance_enabled(spark: SparkSession, *args: str | DataFrame) -> Iterator[tuple[DataFrame | str]]:
+def data_provenance_enabled(
+    spark: SparkSession, *args: DataFrameOrView
+) -> T.Generator[T.Tuple[DataFrameOrView, ...] | DataFrameOrView, None, None]:
     """
     Context manager to enable data provenance for the duration of a block of code.
-    It also adds a provenance column to the given DataFrames or temporary view names
+    It also adds a provenance column to the given DataFrames or view names
     and removes it after the block is executed.
     """
+    if not args:
+        raise ValueError("Data provenance should be enabled for at least one DataFrame or view.")
+
     # Remember the previous state in case these are nested
     is_data_provenance_enabled = str(spark.conf.get("spark.provenance.enabled", "false"))
     try:
         # Turn data provenance on for this block
         spark.conf.set("spark.provenance.enabled", "true")
-        yield tuple(add_provenance_column(df, spark) for df in args)
+        dataframe_or_views_with_provenance = tuple(add_provenance_column(df, spark) for df in args)
+        yield dataframe_or_views_with_provenance if len(args) > 1 else dataframe_or_views_with_provenance[0]
     finally:
         # Revert to whatever it was before
         spark.conf.set("spark.provenance.enabled", is_data_provenance_enabled)
-        # Remove the provenance column from the DataFrames
+        # Remove the provenance column from the DataFrames/views
         for df in args:
             remove_provenance_column(df, spark)
 
 
-def build_data_provenance_session() -> SparkSession.Builder:
+def data_provenance_session_builder() -> SparkSession.Builder:
     """
     Helper function to automatically find the bundled JAR
-    and initialize a SparkSession with the plugin enabled.
+    and initialize a SparkSession Builder with the plugin enabled.
     """
     # 1. Find the path to the 'jars' folder dynamically
     current_dir = os.path.dirname(os.path.abspath(__file__))
