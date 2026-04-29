@@ -1,5 +1,11 @@
 resolvers += Classpaths.sbtPluginReleases
 
+// https://scalameta.org/scalafmt/
+addSbtPlugin("org.scalameta" % "sbt-scalafmt" % "2.4.6")
+
+// https://scalacenter.github.io/scalafix/
+addSbtPlugin("ch.epfl.scala" % "sbt-scalafix" % "0.14.6")
+
 // https://github.com/sbt/sbt-maven-resolver
 // addSbtPlugin("org.scala-sbt" % "sbt-maven-resolver" % "0.1.1")
 
