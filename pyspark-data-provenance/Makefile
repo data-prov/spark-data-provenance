@@ -160,18 +160,21 @@ test: ## Run tests
 lint: ## Run Ruff linter
 	@$(UV) run --group dev ruff check .
 
+fix-lint: ## Fix linter issues
+	$(UV) run --group dev ruff check --fix .
+
 format: ## Format with Ruff
 	@$(UV) run --group dev ruff format .
+
+format-check:
+	@$(UV) run --group dev ruff format --check .
 
 type-check: ## Run mypy on source and tests
 	@$(UV) run --group dev mypy src
 
-check: lint type-check ## Run lint and type checks
+check: lint format-check type-check ## Run lint, format and type checks
 
-fix-lint: ## Fix linter issues
-	$(UV) run --group dev ruff check --fix .
-
-fix: fix-lint ## Fix linter and format issues
+fix: fix-lint format ## Fix linter and format issues
 
 clean: ## Remove caches and build artifacts
 	@rm -rf .venv dist build .pytest_cache .mypy_cache .ruff_cache

@@ -41,6 +41,9 @@ val sparkVersion = "4.1.1"
 
 crossScalaVersions := Seq("2.13.17", "2.13.18")
 
+ThisBuild / semanticdbEnabled := true
+ThisBuild / semanticdbVersion := scalafixSemanticdb.revision
+
 update / checksums  := Nil
 lazy val root = project in file(".")
 
@@ -73,7 +76,7 @@ libraryDependencies ++= Seq(
 
 // Compilation options
 javacOptions ++= Seq("-source", "21")
-scalacOptions ++= Seq("-deprecation", "-feature")
+scalacOptions ++= Seq("-deprecation", "-feature", "-Wunused")
 
 // Run main class
 Compile / run := Defaults.runTask(
