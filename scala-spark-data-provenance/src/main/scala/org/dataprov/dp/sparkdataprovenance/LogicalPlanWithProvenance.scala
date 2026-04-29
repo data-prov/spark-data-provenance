@@ -1,16 +1,17 @@
 package org.dataprov.dp
 
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, Project, Join, Filter, Aggregate, LeafNode, Sort, Distinct}
+import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, Project, Join, Filter, Aggregate, LeafNode, Sort, Distinct, Except}
 import org.apache.spark.sql.catalyst.expressions.{Alias, Literal, MonotonicallyIncreasingID, Multiply, Concat, ConcatWs, Cast, Expression, IsNull, If}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{Complete, Sum, AggregateExpression, CollectSet}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.dsl.plans.DslLogicalPlan
 import org.apache.spark.sql.types.StringType
-import org.apache.spark.sql.functions.concat_ws
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
+import org.dataprov.dp.sparkdataprovenance.DataFrameProvenanceTransformations
 
-case class AddProvenanceColumn(spark: SparkSession) extends Rule[LogicalPlan] {
+
+case class LogicalPlanWithProvenance(spark: SparkSession) extends Rule[LogicalPlan] {
 
 
   def ensureProv(plan: LogicalPlan): LogicalPlan = {
@@ -35,10 +36,10 @@ case class AddProvenanceColumn(spark: SparkSession) extends Rule[LogicalPlan] {
   // Custom tag to mark that a join has been processed to avoid infinite loops
   val PROCESSED_TAG = TreeNodeTag[Boolean]("provenance_processed")
 
-  override def apply(plan: LogicalPlan) = {
-    val isEnabled = spark.sessionState.conf.getConfString("spark.provenance.enabled", "false")
-    if (isEnabled != "true"|| !plan.resolved) {
-      plan // If the feature is not enabled, return the plan unchanged
+  override def apply(plan: LogicalPlan) : LogicalPlan= {
+    val isEnabled = spark.sessionState.conf.getConfString(DataFrameProvenanceTransformations.provenanceEnabledConf, "false") // TODO : import DataFrameProvenanceTransformations.provenanceEnabledConf
+    if (isEnabled != "true") {
+      return plan // If the feature is not enabled, return the plan unchanged
     }
     
     
@@ -46,7 +47,6 @@ case class AddProvenanceColumn(spark: SparkSession) extends Rule[LogicalPlan] {
     plan.transformUp {
       
       // We look for 'Project' nodes, which represent SELECT statements
-    
       case p @ Project(projectList, child) =>
 
         // CRITICAL: Catalyst runs rules repeatedly until the plan stops changing.
@@ -130,11 +130,19 @@ case class AddProvenanceColumn(spark: SparkSession) extends Rule[LogicalPlan] {
 
       // We look for 'Filter' nodes, which represent WHERE statements
       case f @ Filter(condition, child) => 
-        if (hasProv(f)) f else f.copy(child = ensureProv(child))
-        
+        if (hasProv(f)) {
+          f
+        } else {
+          f.copy(child = ensureProv(child))
+        }
+
       // We look for 'Sort' nodes, which represent ORDER BY statements
       case s @ Sort(order, global, child, hint) => 
-        if (hasProv(s)) s else s.copy(child = ensureProv(child))
+        if (hasProv(s)) {
+          s
+        } else {
+          s.copy(child = ensureProv(child))
+        }
 
       // We look for 'Distinct' nodes, which represent Distinct statements
       // We treat Distinct as a special case of Aggregate with all columns as 
@@ -158,8 +166,7 @@ case class AddProvenanceColumn(spark: SparkSession) extends Rule[LogicalPlan] {
           aggregateExpressions = groupingCols :+ combinedTag,
           child = taggedChild
         )
-        
-
+      
     }
   }
 }

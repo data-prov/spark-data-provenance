@@ -9,7 +9,7 @@ class ProvenanceExtension extends (SparkSessionExtensions => Unit) {
   override def apply(extensions: SparkSessionExtensions): Unit = {
     // Inject our custom rule into the Resolution (Analyzer) phase
     extensions.injectResolutionRule { session =>
-      AddProvenanceColumn(session)
+      LogicalPlanWithProvenance(session)
     }
   }
 }
