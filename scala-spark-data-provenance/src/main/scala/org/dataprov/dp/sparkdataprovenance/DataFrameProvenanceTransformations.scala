@@ -15,29 +15,55 @@ object DataFrameProvenanceTransformations {
   }
   def provenanceColumn: Column = monotonically_increasing_id()
 
+  /** Adds the configured provenance column to a DataFrame only when it is not
+    * already present.
+    *
+    * If the column already exists, the original DataFrame is returned
+    * unchanged.
+    */
   def addProvenanceColumn(df: DataFrame): DataFrame = {
     val colName = provenanceColumnName(df.sparkSession)
-    df.withColumn(colName, provenanceColumn)
+    if (df.columns.contains(colName)) {
+      df
+    } else {
+      df.withColumn(colName, provenanceColumn)
+    }
   }
 
-  def addProvenanceColumn(spark: SparkSession, dfName: String): String = {
+  /** Adds the configured provenance column to a temp view only when it is not
+    * already present.
+    *
+    * If the column already exists, the temp view is left unchanged. Returns the
+    * provided view name to support call chaining.
+    */
+  def addProvenanceColumn(spark: SparkSession, view: String): String = {
     val colName = provenanceColumnName(spark)
-    spark
-      .table(dfName)
-      .withColumn(colName, provenanceColumn)
-      .createOrReplaceTempView(dfName)
-    dfName
+    val df = spark.table(view)
+    if (!df.columns.contains(colName)) {
+      df.withColumn(colName, provenanceColumn).createOrReplaceTempView(view)
+    }
+    view
   }
 
+  /** Removes the configured provenance column from a DataFrame.
+    *
+    * If the column does not exist, Spark leaves the DataFrame unchanged.
+    */
   def removeProvenanceColumn(df: DataFrame): DataFrame = {
     val colName = provenanceColumnName(df.sparkSession)
     df.drop(colName)
   }
 
-  def removeProvenanceColumn(spark: SparkSession, dfName: String): String = {
+  /** Removes the configured provenance column from a temp view and replaces the
+    * view.
+    *
+    * If the column does not exist, the resulting view schema is unchanged.
+    * Returns the provided view name to support call chaining.
+    */
+  def removeProvenanceColumn(spark: SparkSession, view: String): String = {
     val colName = provenanceColumnName(spark)
-    spark.table(dfName).drop(colName).createOrReplaceTempView(dfName)
-    dfName
+    spark.table(view).drop(colName).createOrReplaceTempView(view)
+    view
   }
 
   implicit class DataFrameWithProvenance(df: DataFrame) {
