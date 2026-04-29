@@ -3,6 +3,8 @@ from .data_provenance import (
 )
 from .data_provenance import (
     data_provenance_enabled as data_provenance_enabled,
+)
+from .data_provenance import (
     provenance_column_name as provenance_column_name,
 )
 

@@ -1,14 +1,19 @@
 import os
 from contextlib import contextmanager
 from typing import Iterator
-from pyspark.sql import SparkSession, DataFrame
+
+from pyspark.sql import DataFrame, SparkSession
+
 
 def provenance_column_name(spark: SparkSession) -> str:
     """
     Helper function to get the name of the provenance column from the Spark configuration.
     This is useful to avoid hardcoding the column name in the code and to allow users to customize it.
     """
-    return spark._jvm.org.dataprov.dp.sparkdataprovenance.DataFrameProvenanceTransformations.provenanceColumnName(spark._jsparkSession)
+    return spark._jvm.org.dataprov.dp.sparkdataprovenance.DataFrameProvenanceTransformations.provenanceColumnName(
+        spark._jsparkSession
+    )
+
 
 def add_provenance_column(df_or_name: str | DataFrame, spark: SparkSession):
     """
@@ -22,6 +27,7 @@ def add_provenance_column(df_or_name: str | DataFrame, spark: SparkSession):
             return df_or_name
         case DataFrame():
             return DataFrame(jfunction(df_or_name._jdf), spark)
+
 
 def remove_provenance_column(df_or_name: str | DataFrame, spark: SparkSession):
     """
@@ -68,9 +74,6 @@ def build_data_provenance_session() -> SparkSession.Builder:
     jar_path = os.path.join(current_dir, "jars", "dp-spark_2.13-0.0.1.jar")
 
     # 2. Build and return the SparkSession
-    return (
-        SparkSession
-        .builder
-        .config("spark.jars", jar_path)
-        .config("spark.sql.extensions", "org.dataprov.dp.ProvenanceExtension")
+    return SparkSession.builder.config("spark.jars", jar_path).config(
+        "spark.sql.extensions", "org.dataprov.dp.ProvenanceExtension"
     )
