@@ -17,15 +17,14 @@ JOB_NAME = "getting_started_job"
 today_date: str = datetime.date.today().strftime("%Y-%m-%d")
 now_datetime: datetime.datetime = datetime.datetime.now(datetime.UTC)
 
+
 def main():
     """
     The dp-spark JAR is expected to have been installed locally, for instance,
     thanks to `sbt publishLocal publishM2` in the Scala-related folder
     """
     spark = (
-        SparkSession
-        .builder
-        .appName(JOB_NAME)
+        SparkSession.builder.appName(JOB_NAME)
         .config("spark.sql.extensions", "org.dataprov.dp.ProvenanceExtension")
         .enableHiveSupport()
         .getOrCreate()
@@ -46,7 +45,8 @@ def main():
             ("B", datetime.date(2026, 1, 15), 100.0, 20),
             ("B", datetime.date(2026, 1, 16), 100.0, 30),
             ("B", datetime.date(2026, 1, 17), 80.0, 60),
-        ], ["product", "date", "price", "sales"]
+        ],
+        ["product", "date", "price", "sales"],
     )
     df.printSchema()
     df.show()
@@ -72,6 +72,7 @@ def main():
         result_df = spark.sql("select * from sales")
 
     result_df.show()
+
 
 if __name__ == "__main__":
     main()

@@ -8,12 +8,22 @@ SCALA_PACKAGE_VERSION ?= $(shell cat $(SC_DIR)/VERSION)
 SCALA_MINOR_VERSION ?= $(shell cat $(SC_DIR)/SCALA_MINOR_VERSION)
 SCALA_PACKAGE_JAR ?= $(SCALA_PACKAGE_NAME)_$(SCALA_MINOR_VERSION)-$(SCALA_PACKAGE_VERSION).jar
 
-.PHONY: build python-init python-check python-test python-format python-clean python-publish python-publish-testpypi
+.PHONY: info scala-check scala-fix scala-build python-clean python-init-uv-python python-bump-package python-bump-to-major-version python-bump-to-minor-version python-bump-to-patch-version python-increment-dev-version python-init python-build python-check python-fix python-test python-publish python-publish-testpypi python-install-local python-run-local
 
 info:
 	@echo "Package version: $(SCALA_PACKAGE_VERSION) - Scala version: $(SCALA_MINOR_VERSION)"
 
 # Build project
+scala-check:
+	@echo "Running Scala lint and format checks..."
+	$(MAKE) -C $(SC_DIR) check
+	@echo "Scala lint and format checks complete."
+
+scala-fix:
+	@echo "Running Scala lint fixes and formatting code..."
+	$(MAKE) -C $(SC_DIR) fix
+	@echo "Scala lint fixes and formatting complete."
+
 scala-build:
 	@echo "Testing and packaging the Scala project..."
 	$(MAKE) -C $(SC_DIR) compile test build publish-local
@@ -65,15 +75,12 @@ python-build: python-init
 	@echo "Python build complete."
 
 python-check:
-	@echo "Running Python lint and type checks..."
-	$(MAKE) -C $(PY_DIR) check
-
-python-format:
-	@echo "Formatting Python code..."
-	$(MAKE) -C $(PY_DIR) format
-
+	@echo "Running Python lint, format and type checks..."
+	$(MAKE) -C $(PY_DIR) check 
+	@echo "Python lint, format and type checks complete."
+	
 python-fix:
-	@echo "Running Python linter fixes..."
+	@echo "Running Python linter fixes and formatting code..."
 	$(MAKE) -C $(PY_DIR) fix
 
 python-test:
