@@ -24,14 +24,15 @@ class ProvenanceAddTest extends AnyFunSpec with Matchers with SparkSessionTestWr
 
       // THEN:
       // 1. The provenance column should be added
-      assert(result.columns.contains(defaultProvenanceColName))
+      val colName = provenanceColumnName(df.sparkSession)
+      assert(result.columns.contains(colName))
 
       // 2. The number of rows should be the same
       val collected = result.collect()
       assert(collected.length == 3)
 
       // 3. The UUIDs should be unique (a fundamental property of provenance)
-      val uniqueUUIDs = result.select(defaultProvenanceColName).distinct().count()
+      val uniqueUUIDs = result.select(colName).distinct().count()
       assert(uniqueUUIDs == 3)
 
       // 4. The original data should be preserved
@@ -75,6 +76,7 @@ class ProvenanceAddTest extends AnyFunSpec with Matchers with SparkSessionTestWr
 
       val df = data.toDF("A", "B", "C")
       df.createOrReplaceTempView("test_view")
+      val colName = provenanceColumnName(df.sparkSession)
 
       // WHEN: We call the addProvenanceColumn function to add provenance to the view
       addProvenanceColumn(spark, "test_view")
@@ -82,7 +84,7 @@ class ProvenanceAddTest extends AnyFunSpec with Matchers with SparkSessionTestWr
       // THEN:
       // 1. The view should now have the provenance column
       val resultSchema = spark.table("test_view").schema
-      assert(resultSchema.fieldNames.contains(defaultProvenanceColName))
+      assert(resultSchema.fieldNames.contains(colName))
 
       // 2. The number of rows should be the same
       val collected = spark.table("test_view").collect()
@@ -93,7 +95,7 @@ class ProvenanceAddTest extends AnyFunSpec with Matchers with SparkSessionTestWr
       val expectedData = data.map { case (a, b, c) => (a, b, c) }
       assert(resultData.toSet == expectedData.toSet)
     }
-    
+
     it("should not change the view if the provenance column already exists") {
       // GIVEN: A dataframe with a provenance column and a temporary view
       val data = Seq(
@@ -101,7 +103,6 @@ class ProvenanceAddTest extends AnyFunSpec with Matchers with SparkSessionTestWr
         ("a", "b", "c", "uuid2"),
         ("d", "b", "e", "uuid3")
       )
-
       val df = data.toDF("A", "B", "C", defaultProvenanceColName)
       df.createOrReplaceTempView("test_view")
 

@@ -17,14 +17,14 @@ class ProvenanceRemoveTest extends AnyFunSpec with Matchers with SparkSessionTes
         ("d", "b", "e", "uuid3")
       )
 
-      val df = data.toDF("A", "B", "C", "_provenance_tag")
+      val df = data.toDF("A", "B", "C", defaultProvenanceColName)
 
       // WHEN: We call the removeProvenanceColumn function to remove provenance from the DataFrame
       val result = removeProvenanceColumn(df)
 
       // THEN:
       // 1. The provenance column should be removed
-      assert(result.columns.contains("_provenance_tag") == false)
+      assert(result.columns.contains(defaultProvenanceColName) == false)
 
       // 2. The number of rows should be the same
       val collected = result.collect()
@@ -71,7 +71,7 @@ class ProvenanceRemoveTest extends AnyFunSpec with Matchers with SparkSessionTes
         ("d", "b", "e", "uuid3")
       )
 
-      val df = data.toDF("A", "B", "C", "_provenance_tag")
+      val df = data.toDF("A", "B", "C", defaultProvenanceColName)
       df.createOrReplaceTempView("test_view")
 
       // WHEN: We call the removeProvenanceColumn function to remove provenance from the view
@@ -80,7 +80,7 @@ class ProvenanceRemoveTest extends AnyFunSpec with Matchers with SparkSessionTes
       // THEN:
       // 1. The provenance column should be removed from the view
       val viewDF = spark.table("test_view")
-      assert(viewDF.columns.contains("_provenance_tag") == false)
+      assert(viewDF.columns.contains(defaultProvenanceColName) == false)
 
       // 2. The number of rows should be the same
       val collected = viewDF.collect()
