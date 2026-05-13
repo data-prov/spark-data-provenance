@@ -30,7 +30,7 @@ class ProvenanceAddTest extends AnyFunSpec with Matchers with SparkSessionTestWr
 
   private def assertDataFrameProvenanceIdempotence(dfWithProv: DataFrame): Unit = {
     // If the dataframe already has a provenance column, it should stay unchanged and no new column should be added
-    assertSmallDataFrameEquality(addProvenanceColumn(dfWithProv), dfWithProv)
+    assertSmallDataFrameEquality(addProvenance(dfWithProv), dfWithProv)
   }
 
   private def assertViewProvenanceIdempotence(viewName: String): Unit = {
@@ -38,7 +38,7 @@ class ProvenanceAddTest extends AnyFunSpec with Matchers with SparkSessionTestWr
 
     try {
       spark.table(viewName).createOrReplaceTempView(snapshotViewName)
-      addProvenanceColumn(spark, viewName)
+      addProvenance(spark, viewName)
       assertSmallDataFrameEquality(
         spark.table(viewName),
         spark.table(snapshotViewName),
@@ -53,7 +53,7 @@ class ProvenanceAddTest extends AnyFunSpec with Matchers with SparkSessionTestWr
       val df = toyDf
 
       // Add provenance to dataframe
-      val dfWithProv = addProvenanceColumn(df)
+      val dfWithProv = addProvenance(df)
 
       // Perform checks
       assertProvenanceColumnAndDataPreserved(df, defaultProvenanceColName, dfWithProv)
@@ -65,7 +65,7 @@ class ProvenanceAddTest extends AnyFunSpec with Matchers with SparkSessionTestWr
 
       withSparkConf(spark, provenanceColConfKey, customProvColName) {
         // Add provenance to dataframe with custom column name
-        val dfWithProv = addProvenanceColumn(df)
+        val dfWithProv = addProvenance(df)
 
         // Perform checks
         assertProvenanceColumnAndDataPreserved(df, customProvColName, dfWithProv)
@@ -79,7 +79,7 @@ class ProvenanceAddTest extends AnyFunSpec with Matchers with SparkSessionTestWr
       df.createOrReplaceTempView(viewName)
 
       // Add provenance to view
-      addProvenanceColumn(spark, viewName)
+      addProvenance(spark, viewName)
 
       // Perform checks
       assertProvenanceColumnAndDataPreserved(df, defaultProvenanceColName, spark.table(viewName))
@@ -92,7 +92,7 @@ class ProvenanceAddTest extends AnyFunSpec with Matchers with SparkSessionTestWr
 
       withSparkConf(spark, provenanceColConfKey, customProvColName) {
         // Add provenance to dataframe with custom column name
-        addProvenanceColumn(spark, viewName)
+        addProvenance(spark, viewName)
 
         // Perform checks
         assertProvenanceColumnAndDataPreserved(df, customProvColName, spark.table(viewName))

@@ -30,7 +30,7 @@ class ProvenanceRemoveTest extends AnyFunSpec with Matchers with SparkSessionTes
 
   private def assertDataFrameProvenanceIdempotent(dfWithoutProvenance: DataFrame): Unit = {
     // If the dataframe already has no provenance column, it should stay unchanged and no column should be removed
-    assertSmallDataFrameEquality(removeProvenanceColumn(dfWithoutProvenance), dfWithoutProvenance)
+    assertSmallDataFrameEquality(removeProvenance(dfWithoutProvenance), dfWithoutProvenance)
   }
 
   private def assertViewProvenanceIdempotent(viewName: String): Unit = {
@@ -38,7 +38,7 @@ class ProvenanceRemoveTest extends AnyFunSpec with Matchers with SparkSessionTes
 
     try {
       spark.table(viewName).createOrReplaceTempView(snapshotViewName)
-      removeProvenanceColumn(spark, viewName)
+      removeProvenance(spark, viewName)
       assertSmallDataFrameEquality(
         spark.table(viewName),
         spark.table(snapshotViewName),
@@ -53,10 +53,10 @@ class ProvenanceRemoveTest extends AnyFunSpec with Matchers with SparkSessionTes
       val df = toyDf
 
       // Add provenance to dataframe
-      val dfWithProv = addProvenanceColumn(toyDf)
+      val dfWithProv = addProvenance(toyDf)
 
       // Remove provenance from dataframe
-      val dfWithoutProvenance = removeProvenanceColumn(dfWithProv)
+      val dfWithoutProvenance = removeProvenance(dfWithProv)
 
       // Perform checks
       assertNoProvenanceColumnAndDataPreserved(dfWithoutProvenance, defaultProvenanceColName, df)
@@ -68,10 +68,10 @@ class ProvenanceRemoveTest extends AnyFunSpec with Matchers with SparkSessionTes
 
       withSparkConf(spark, provenanceColConfKey, customProvColName) {
         // Add provenance to dataframe
-        val dfWithProv = addProvenanceColumn(toyDf)
+        val dfWithProv = addProvenance(toyDf)
 
         // Remove provenance from dataframe
-        val dfWithoutProvenance = removeProvenanceColumn(dfWithProv)
+        val dfWithoutProvenance = removeProvenance(dfWithProv)
 
         // Perform checks
         assertNoProvenanceColumnAndDataPreserved(dfWithoutProvenance, customProvColName, df)
@@ -84,10 +84,10 @@ class ProvenanceRemoveTest extends AnyFunSpec with Matchers with SparkSessionTes
 
       // Create view and add provenance to it
       df.createOrReplaceTempView(viewName)
-      addProvenanceColumn(spark, viewName)
+      addProvenance(spark, viewName)
 
       // Remove provenance from view
-      removeProvenanceColumn(spark, viewName)
+      removeProvenance(spark, viewName)
 
       // Perform checks
       assertNoProvenanceColumnAndDataPreserved(spark.table(viewName), defaultProvenanceColName, df)
@@ -100,10 +100,10 @@ class ProvenanceRemoveTest extends AnyFunSpec with Matchers with SparkSessionTes
       withSparkConf(spark, provenanceColConfKey, customProvColName) {
         // Create view and add provenance to it with custom column name
         df.createOrReplaceTempView(viewName)
-        addProvenanceColumn(spark, viewName)
+        addProvenance(spark, viewName)
 
         // Remove provenance from view
-        removeProvenanceColumn(spark, viewName)
+        removeProvenance(spark, viewName)
 
         // Perform checks
         assertNoProvenanceColumnAndDataPreserved(spark.table(viewName), customProvColName, df)
