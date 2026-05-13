@@ -21,7 +21,7 @@ object DataFrameProvenanceTransformations {
     * If the column already exists, the original DataFrame is returned
     * unchanged.
     */
-  def addProvenanceColumn(df: DataFrame): DataFrame = {
+  def addProvenance(df: DataFrame): DataFrame = {
     val colName = provenanceColumnName(df.sparkSession)
     if (df.columns.contains(colName)) {
       df
@@ -36,7 +36,7 @@ object DataFrameProvenanceTransformations {
     * If the column already exists, the temp view is left unchanged. Returns the
     * provided view name to support call chaining.
     */
-  def addProvenanceColumn(spark: SparkSession, view: String): String = {
+  def addProvenance(spark: SparkSession, view: String): String = {
     val colName = provenanceColumnName(spark)
     val df = spark.table(view)
     if (!df.columns.contains(colName)) {
@@ -49,7 +49,7 @@ object DataFrameProvenanceTransformations {
     *
     * If the column does not exist, Spark leaves the DataFrame unchanged.
     */
-  def removeProvenanceColumn(df: DataFrame): DataFrame = {
+  def removeProvenance(df: DataFrame): DataFrame = {
     val colName = provenanceColumnName(df.sparkSession)
     df.drop(colName)
   }
@@ -60,7 +60,7 @@ object DataFrameProvenanceTransformations {
     * If the column does not exist, the resulting view schema is unchanged.
     * Returns the provided view name to support call chaining.
     */
-  def removeProvenanceColumn(spark: SparkSession, view: String): String = {
+  def removeProvenance(spark: SparkSession, view: String): String = {
     val colName = provenanceColumnName(spark)
     spark.table(view).drop(colName).createOrReplaceTempView(view)
     view
@@ -68,8 +68,8 @@ object DataFrameProvenanceTransformations {
 
   implicit class DataFrameWithProvenance(df: DataFrame) {
     def addProvenanceColumn: DataFrame =
-      DataFrameProvenanceTransformations.addProvenanceColumn(df)
+      DataFrameProvenanceTransformations.addProvenance(df)
     def removeProvenanceColumn: DataFrame =
-      DataFrameProvenanceTransformations.removeProvenanceColumn(df)
+      DataFrameProvenanceTransformations.removeProvenance(df)
   }
 }
