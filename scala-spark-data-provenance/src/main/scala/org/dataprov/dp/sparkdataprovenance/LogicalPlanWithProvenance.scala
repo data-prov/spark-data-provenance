@@ -140,11 +140,10 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
                     val cleanedOutput = j.output.filter(_.name != provenanceColName)
 
                     // Create a new join with the combined provenance tag in output
-                    val processedJoin = j.copy(left = left, right = right)
-                    processedJoin.setTagValue(PROCESSED_TAG, true)
+                    j.setTagValue(PROCESSED_TAG, true)
                     
                     // Wrap in a Project to materialize the combined provenance column
-                    Project(cleanedOutput :+ combinedTag, processedJoin)
+                    Project(cleanedOutput :+ combinedTag, j)
                 } else {
                     j
                 }
