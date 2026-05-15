@@ -28,8 +28,6 @@ import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateExpression
 import org.apache.spark.sql.catalyst.expressions.aggregate.Complete
 import org.apache.spark.sql.catalyst.expressions.ConcatWs
 import org.apache.spark.sql.catalyst.plans.logical.Deduplicate
-import org.apache.spark.sql.catalyst.dsl.plans.DslLogicalPlan
-import org.apache.hadoop.shaded.org.checkerframework.checker.units.qual.A
 import org.apache.spark.sql.catalyst.plans.logical.Distinct
 
 case class LogicalPlanWithProvenance(spark: SparkSession)
@@ -201,7 +199,8 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
                     a
                 }
 
-            // We look for 'Distinct' nodes, which represent DISTINCT statements
+            // We look for 'Distinct' nodes, which represent DISTINCT statements without specified keys
+            // (e.g., SELECT DISTINCT in SQL)
             case d @ Distinct(child) => 
                 // We ensure the child is tagged 
                 val childHasProv = hasProv(child, provenanceColName)
@@ -234,7 +233,40 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
                     d   
                 }
 
-            
+            // We look for 'Deduplicate' nodes, which represent Distinct statements with specified keys 
+            // (e.g., distinct in DataFrame API or dropDuplicates in DataFrame API)
+            case d @ Deduplicate(keys, child) =>
+                val childHasProv = hasProv(child, provenanceColName)
+                val deduplicateHasProv = hasProv(d, provenanceColName)
+
+                if (childHasProv && !deduplicateHasProv) {
+                    val provAttr = getProvAttr(child, provenanceColName)
+                    
+                    val validKeys = keys.filter(_.name != provenanceColName)
+
+                    val collectSet = AggregateExpression(
+                        CollectSet(provAttr),
+                        Complete,
+                        isDistinct = false
+                    )
+
+                    val combinedTag = Alias(
+                        Concat(Seq(
+                            Literal("{"),
+                            ConcatWs(Seq(Literal(" ⊕ "), collectSet)),
+                            Literal("}")
+                        )),
+                        provenanceColName
+                    )()
+
+                    val newAggregateExprs = validKeys :+ combinedTag
+                    val newAggregate = Aggregate(validKeys, newAggregateExprs, child)
+                    newAggregate.setTagValue(PROCESSED_TAG2, true)
+                    newAggregate
+                    
+                } else {
+                    d
+                }
 
             }
           }
