@@ -3,124 +3,102 @@ package org.dataprov.dp
 import org.scalatest.funspec.AnyFunSpec
 import org.scalatest.matchers.should.Matchers
 import org.dataprov.dp.sparkdataprovenance.DataFrameProvenanceTransformations._
+import com.github.mrpowers.spark.fast.tests.DataFrameComparer
+import org.apache.spark.sql.DataFrame
 
-class ProvenanceAddTest extends AnyFunSpec with Matchers with SparkSessionTestWrapper {
+
+class ProvenanceAddTest extends AnyFunSpec with Matchers with SparkSessionTestWrapper with DataFrameComparer with SparkConfTestUtils {
   
   import spark.implicits._
 
-  describe("Provenance Addition") {
-    it("should add a unique provenance column to each row") {
-      // GIVEN: A dataframe with some duplicate rows to test that provenance is added even when data is identical
-      val data = Seq(
-      ("a", "b", "c"),
-      ("a", "b", "c"),
-      ("d", "b", "e")
+  private def toyDf: DataFrame = Seq(
+    ("a", 1, 2.3),
+    ("a", 1, 2.3),
+    ("d", 2, 3.4)
+  ).toDF("A", "B", "C")
+  private val viewName: String = "toy_view"
+
+  private val customProvColName: String = "custom_prov_col"
+
+  private def assertProvenanceColumnAndDataPreserved(df: DataFrame, provColName: String, dfWithProv: DataFrame): Unit = {
+    // 1. The provenance column should be added
+    assert(dfWithProv.columns.contains(provColName))
+
+    // 2. The original data (except provenance) should be preserved
+    assertSmallDataFrameEquality(dfWithProv.drop(provColName), df)
+  }
+
+  private def assertDataFrameProvenanceIdempotence(dfWithProv: DataFrame): Unit = {
+    // If the dataframe already has a provenance column, it should stay unchanged and no new column should be added
+    assertSmallDataFrameEquality(addProvenance(dfWithProv), dfWithProv)
+  }
+
+  private def assertViewProvenanceIdempotence(viewName: String): Unit = {
+    val snapshotViewName = s"${viewName}_snapshot"
+
+    try {
+      spark.table(viewName).createOrReplaceTempView(snapshotViewName)
+      addProvenance(spark, viewName)
+      assertSmallDataFrameEquality(
+        spark.table(viewName),
+        spark.table(snapshotViewName),
       )
-      
-      val df = data.toDF("A", "B", "C")
+    } finally {
+      spark.catalog.dropTempView(snapshotViewName)
+    }
+  }
 
-      // WHEN: We call the addProvenanceColumn function to add provenance to the DataFrame
-      val result = addProvenanceColumn(df)
+  describe("Adding provenance tag (column) to a DataFrame/view") {
+    it("should add a provenance column to a dataframe iff not already present") {
+      val df = toyDf
 
-      // THEN:
-      // 1. The provenance column should be added
-      val colName = provenanceColumnName(df.sparkSession)
-      assert(result.columns.contains(colName))
+      // Add provenance to dataframe
+      val dfWithProv = addProvenance(df)
 
-      // 2. The number of rows should be the same
-      val collected = result.collect()
-      assert(collected.length == 3)
-
-      // 3. The UUIDs should be unique (a fundamental property of provenance)
-      val uniqueUUIDs = result.select(colName).distinct().count()
-      assert(uniqueUUIDs == 3)
-
-      // 4. The original data should be preserved
-      val resultData = collected.map(r => (r.getString(0), r.getString(1), r.getString(2)))
-      assert(resultData.toSet == data.toSet)
+      // Perform checks
+      assertProvenanceColumnAndDataPreserved(df, defaultProvenanceColName, dfWithProv)
+      assertDataFrameProvenanceIdempotence(dfWithProv)
     }
 
-    it("should not add a provenance column if it already exists") {
-      // GIVEN: A dataframe that already has a provenance column
-      val data = Seq(
-        ("a", "b", "c", "uuid1"),
-        ("a", "b", "c", "uuid2"),
-        ("d", "b", "e", "uuid3")
-      )
+    it("should add a provenance column to a dataframe iff not already present with custom column name") {
+      val df = toyDf
 
-      val df = data.toDF("A", "B", "C", defaultProvenanceColName)
+      withSparkConf(spark, provenanceColConfKey, customProvColName) {
+        // Add provenance to dataframe with custom column name
+        val dfWithProv = addProvenance(df)
 
-      // WHEN: We call the addProvenanceColumn function to add provenance to the DataFrame
-      val result = addProvenanceColumn(df)
-
-      // THEN:
-      // 1. The schema should be unchanged (no new column added)
-      assert(result.schema == df.schema)
-
-      // 2. The number of rows should be the same
-      val collected = result.collect()
-      assert(collected.length == 3)
-
-      // 3. The original data (including provenance) should be preserved
-      val resultData = collected.map(r => (r.getString(0), r.getString(1), r.getString(2), r.getString(3)))
-      assert(resultData.toSet == data.toSet)
+        // Perform checks
+        assertProvenanceColumnAndDataPreserved(df, customProvColName, dfWithProv)
+        assertDataFrameProvenanceIdempotence(dfWithProv)
+      }
     }
 
-    it("should add a provenance column to a view if it does not already exist") {
-      // GIVEN: A dataframe without a provenance column and a temporary view
-      val data = Seq(
-        ("a", "b", "c"),
-        ("a", "b", "c"),
-        ("d", "b", "e")
-      )
 
-      val df = data.toDF("A", "B", "C")
-      df.createOrReplaceTempView("test_view")
-      val colName = provenanceColumnName(df.sparkSession)
+    it("should add a provenance column to a view iff not already present") {
+      val df = toyDf
+      df.createOrReplaceTempView(viewName)
 
-      // WHEN: We call the addProvenanceColumn function to add provenance to the view
-      addProvenanceColumn(spark, "test_view")
+      // Add provenance to view
+      addProvenance(spark, viewName)
 
-      // THEN:
-      // 1. The view should now have the provenance column
-      val resultSchema = spark.table("test_view").schema
-      assert(resultSchema.fieldNames.contains(colName))
-
-      // 2. The number of rows should be the same
-      val collected = spark.table("test_view").collect()
-      assert(collected.length == 3)
-
-      // 3. The original data (except provenance) should be preserved
-      val resultData = collected.map(r => (r.getString(0), r.getString(1), r.getString(2)))
-      val expectedData = data.map { case (a, b, c) => (a, b, c) }
-      assert(resultData.toSet == expectedData.toSet)
+      // Perform checks
+      assertProvenanceColumnAndDataPreserved(df, defaultProvenanceColName, spark.table(viewName))
+      assertViewProvenanceIdempotence(viewName)
     }
 
-    it("should not change the view if the provenance column already exists") {
-      // GIVEN: A dataframe with a provenance column and a temporary view
-      val data = Seq(
-        ("a", "b", "c", "uuid1"),
-        ("a", "b", "c", "uuid2"),
-        ("d", "b", "e", "uuid3")
-      )
-      val df = data.toDF("A", "B", "C", defaultProvenanceColName)
-      df.createOrReplaceTempView("test_view")
+    it("should add a provenance column to a view iff not already present with custom column name") {
+      val df = toyDf
+      df.createOrReplaceTempView(viewName)
 
-      // WHEN: We call the addProvenanceColumn function to add provenance to the view
-      addProvenanceColumn(spark, "test_view")
+      withSparkConf(spark, provenanceColConfKey, customProvColName) {
+        // Add provenance to dataframe with custom column name
+        addProvenance(spark, viewName)
 
-      // THEN:
-      // 1. The schema should be unchanged (no new column added)
-      val resultSchema = spark.table("test_view").schema
-      assert(resultSchema.fieldNames.count(_ == defaultProvenanceColName) == 1)
-
-      // 2. The number of rows should be the same
-      val collected = spark.table("test_view").collect()
-      assert(collected.length == 3)
-
-      // 3. The original data (including provenance) should be preserved
-      val resultData = collected.map(r => (r.getString(0), r.getString(1), r.getString(2), r.getString(3)))
-      assert(resultData.toSet == data.toSet)
+        // Perform checks
+        assertProvenanceColumnAndDataPreserved(df, customProvColName, spark.table(viewName))
+        assertViewProvenanceIdempotence(viewName)
+      }
     }
+
   }
 }

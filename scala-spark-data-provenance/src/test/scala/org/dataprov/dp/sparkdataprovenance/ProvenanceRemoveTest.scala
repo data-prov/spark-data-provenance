@@ -3,121 +3,112 @@ package org.dataprov.dp
 import org.scalatest.funspec.AnyFunSpec
 import org.scalatest.matchers.should.Matchers
 import org.dataprov.dp.sparkdataprovenance.DataFrameProvenanceTransformations._
+import com.github.mrpowers.spark.fast.tests.DataFrameComparer
+import org.apache.spark.sql.DataFrame
 
-class ProvenanceRemoveTest extends AnyFunSpec with Matchers with SparkSessionTestWrapper {
+
+class ProvenanceRemoveTest extends AnyFunSpec with Matchers with SparkSessionTestWrapper with DataFrameComparer with SparkConfTestUtils {
 
   import spark.implicits._
 
-  describe("Provenance Removal") {
-    it("should remove the provenance column from each row") {
-      // GIVEN: A dataframe with a provenance column
-      val data = Seq(
-        ("a", "b", "c", "uuid1"),
-        ("a", "b", "c", "uuid2"),
-        ("d", "b", "e", "uuid3")
+  private def toyDf: DataFrame = Seq(
+    ("a", 1, 2.3),
+    ("a", 1, 2.3),
+    ("d", 2, 3.4)
+  ).toDF("A", "B", "C")
+  private val viewName: String = "toy_view"
+
+  private val customProvColName: String = "custom_prov_col"
+
+  private def assertNoProvenanceColumnAndDataPreserved(dfWithoutProvenance: DataFrame, provColName: String, df: DataFrame): Unit = {
+    // 1. The provenance column should not be present
+    assert(!dfWithoutProvenance.columns.contains(provColName))
+
+    // 2. The original data should be preserved
+    assertSmallDataFrameEquality(dfWithoutProvenance, df)
+  }
+
+  private def assertDataFrameProvenanceIdempotent(dfWithoutProvenance: DataFrame): Unit = {
+    // If the dataframe already has no provenance column, it should stay unchanged and no column should be removed
+    assertSmallDataFrameEquality(removeProvenance(dfWithoutProvenance), dfWithoutProvenance)
+  }
+
+  private def assertViewProvenanceIdempotent(viewName: String): Unit = {
+    val snapshotViewName = s"${viewName}_snapshot"
+
+    try {
+      spark.table(viewName).createOrReplaceTempView(snapshotViewName)
+      removeProvenance(spark, viewName)
+      assertSmallDataFrameEquality(
+        spark.table(viewName),
+        spark.table(snapshotViewName),
       )
+    } finally {
+      spark.catalog.dropTempView(snapshotViewName)
+    }
+  }
 
-      val df = data.toDF("A", "B", "C", defaultProvenanceColName)
+  describe("Removing provenance tag (column) from a DataFrame/view") {
+    it("should remove the provenance column from a dataframe iff already present") {
+      val df = toyDf
 
-      // WHEN: We call the removeProvenanceColumn function to remove provenance from the DataFrame
-      val result = removeProvenanceColumn(df)
+      // Add provenance to dataframe
+      val dfWithProv = addProvenance(toyDf)
 
-      // THEN:
-      // 1. The provenance column should be removed
-      assert(result.columns.contains(defaultProvenanceColName) == false)
+      // Remove provenance from dataframe
+      val dfWithoutProvenance = removeProvenance(dfWithProv)
 
-      // 2. The number of rows should be the same
-      val collected = result.collect()
-      assert(collected.length == 3)
-
-      // 3. The original data (except provenance) should be preserved
-      val resultData = collected.map(r => (r.getString(0), r.getString(1), r.getString(2)))
-      val expectedData = data.map { case (a, b, c, _) => (a, b, c) }
-      assert(resultData.toSet == expectedData.toSet)
-
+      // Perform checks
+      assertNoProvenanceColumnAndDataPreserved(dfWithoutProvenance, defaultProvenanceColName, df)
+      assertDataFrameProvenanceIdempotent(dfWithoutProvenance)
     }
 
-    it ("should not change the DataFrame if the provenance column does not exist") {
-      // GIVEN: A dataframe without a provenance column
-      val data = Seq(
-        ("a", "b", "c"),
-        ("a", "b", "c"),
-        ("d", "b", "e")
-      )
+    it("should remove the provenance column from a dataframe iff already present with custom column name") {
+      val df = toyDf
 
-      val df = data.toDF("A", "B", "C")
+      withSparkConf(spark, provenanceColConfKey, customProvColName) {
+        // Add provenance to dataframe
+        val dfWithProv = addProvenance(toyDf)
 
-      // WHEN: We call the removeProvenanceColumn function to remove provenance from the DataFrame
-      val result = removeProvenanceColumn(df)
+        // Remove provenance from dataframe
+        val dfWithoutProvenance = removeProvenance(dfWithProv)
 
-      // THEN:
-      // 1. The schema should be unchanged
-      assert(result.schema == df.schema)
-
-      // 2. The number of rows should be the same
-      val collected = result.collect()
-      assert(collected.length == 3)
-
-      // 3. The original data should be preserved
-      val resultData = collected.map(r => (r.getString(0), r.getString(1), r.getString(2)))
-      assert(resultData.toSet == data.toSet)
+        // Perform checks
+        assertNoProvenanceColumnAndDataPreserved(dfWithoutProvenance, customProvColName, df)
+        assertDataFrameProvenanceIdempotent(dfWithoutProvenance)
+      }
     }
 
-    it ("should remove the provenance column from a view") {
-      // GIVEN: A dataframe with a provenance column and a temporary view
-      val data = Seq(
-        ("a", "b", "c", "uuid1"),
-        ("a", "b", "c", "uuid2"),
-        ("d", "b", "e", "uuid3")
-      )
+    it("should remove the provenance column from a view iff already present") {
+      val df = toyDf
 
-      val df = data.toDF("A", "B", "C", defaultProvenanceColName)
-      df.createOrReplaceTempView("test_view")
+      // Create view and add provenance to it
+      df.createOrReplaceTempView(viewName)
+      addProvenance(spark, viewName)
 
-      // WHEN: We call the removeProvenanceColumn function to remove provenance from the view
-      removeProvenanceColumn(spark, "test_view")
+      // Remove provenance from view
+      removeProvenance(spark, viewName)
 
-      // THEN:
-      // 1. The provenance column should be removed from the view
-      val viewDF = spark.table("test_view")
-      assert(viewDF.columns.contains(defaultProvenanceColName) == false)
-
-      // 2. The number of rows should be the same
-      val collected = viewDF.collect()
-      assert(collected.length == 3)
-
-      // 3. The original data (except provenance) should be preserved in the view
-      val resultData = collected.map(r => (r.getString(0), r.getString(1), r.getString(2)))
-      val expectedData = data.map { case (a, b, c, _) => (a, b, c) }
-      assert(resultData.toSet == expectedData.toSet)
+      // Perform checks
+      assertNoProvenanceColumnAndDataPreserved(spark.table(viewName), defaultProvenanceColName, df)
+      assertViewProvenanceIdempotent(viewName)
     }
 
-    it ("should not change the view if the provenance column does not exist") {
-      // GIVEN: A dataframe without a provenance column and a temporary view
-      val data = Seq(
-        ("a", "b", "c"),
-        ("a", "b", "c"),
-        ("d", "b", "e")
-      )
+    it("should remove the provenance column from a view iff already present with custom column name") {
+      val df = toyDf
 
-      val df = data.toDF("A", "B", "C")
-      df.createOrReplaceTempView("test_view_no_prov")
+      withSparkConf(spark, provenanceColConfKey, customProvColName) {
+        // Create view and add provenance to it with custom column name
+        df.createOrReplaceTempView(viewName)
+        addProvenance(spark, viewName)
 
-      // WHEN: We call the removeProvenanceColumn function to remove provenance from the view
-      removeProvenanceColumn(spark, "test_view_no_prov")
+        // Remove provenance from view
+        removeProvenance(spark, viewName)
 
-      // THEN:
-      // 1. The schema of the view should be unchanged
-      val viewDF = spark.table("test_view_no_prov")
-      assert(viewDF.schema == df.schema)
-
-      // 2. The number of rows should be the same
-      val collected = viewDF.collect()
-      assert(collected.length == 3)
-
-      // 3. The original data should be preserved in the view
-      val resultData = collected.map(r => (r.getString(0), r.getString(1), r.getString(2)))
-      assert(resultData.toSet == data.toSet)
+        // Perform checks
+        assertNoProvenanceColumnAndDataPreserved(spark.table(viewName), customProvColName, df)
+        assertViewProvenanceIdempotent(viewName)
+      }
     }
   }
 }
