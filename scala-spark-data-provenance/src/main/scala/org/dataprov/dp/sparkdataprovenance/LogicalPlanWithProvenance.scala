@@ -22,12 +22,15 @@ import org.apache.spark.sql.catalyst.expressions.And
 import org.apache.spark.sql.catalyst.expressions.IsNotNull
 import org.apache.spark.sql.catalyst.expressions.SortOrder
 import org.apache.spark.sql.catalyst.expressions.Ascending
-import org.apache.spark.sql.catalyst.plans.logical.Distinct
 import org.apache.spark.sql.catalyst.expressions.Cast
 import org.apache.spark.sql.types.StringType
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateExpression
 import org.apache.spark.sql.catalyst.expressions.aggregate.Complete
 import org.apache.spark.sql.catalyst.expressions.ConcatWs
+import org.apache.spark.sql.catalyst.plans.logical.Deduplicate
+import org.apache.spark.sql.catalyst.dsl.plans.DslLogicalPlan
+import org.apache.hadoop.shaded.org.checkerframework.checker.units.qual.A
+import org.apache.spark.sql.catalyst.plans.logical.Distinct
 
 case class LogicalPlanWithProvenance(spark: SparkSession)
     extends Rule[LogicalPlan] {
@@ -46,6 +49,9 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
     val PROCESSED_TAG: TreeNodeTag[Boolean] =
         TreeNodeTag[Boolean]("provenance_processed")
     
+    // Custom tag to mark that a distinct has been processed to avoid infinite loops
+    val PROCESSED_TAG2: TreeNodeTag[Boolean] =
+        TreeNodeTag[Boolean]("provenance_processed_distinct")
 
     override def apply(plan: LogicalPlan): LogicalPlan = {
         // Get Spark provenance configurations
@@ -62,9 +68,13 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
 
             // We look for 'Project' nodes, which represent SELECT statements
             case p @ Project(projectList, child) =>
+                // We clean the project list from any expression that references columns 
+                // not in the child output, as they would create dead references 
+                // and prevent the correct propagation of the provenance column
+                val validProjectList = projectList.filter(expr => expr.references.subsetOf(child.outputSet)) 
+                
                 // We check if the child has the provenance column and if the project itself already has it
                 // We also check if the project list already contains an expression creating the provenance column
-                val validProjectList = projectList.filter(expr => expr.references.subsetOf(child.outputSet))
                 val childHasProv = hasProv(child, provenanceColName)
                 val projectHasProv = hasProv(p, provenanceColName)
                 
@@ -100,13 +110,15 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
                 val rightHasProv = hasProv(right, provenanceColName)
 
                 // We use a custom tag to check if this join has already been processed 
-                // to avoid infinite loops in case of multiple joins
+                // to avoid infinite loops when we add a new Project node on top of the join 
+                // to combine the provenance tags from both sides.
                 val isProcessed = j.getTagValue(PROCESSED_TAG).contains(true)
 
                 if (!isProcessed && condition.isDefined && (leftHasProv || rightHasProv)) {
                     val leftProvAttr = getProvAttr(left, provenanceColName)
                     val rightProvAttr = getProvAttr(right, provenanceColName)
 
+                    // ----- STRING -----
                     // We need to cast the provenance attributes to string to be able to concatenate them,
                     // as they can be of different types (e.g., string for one side and array for the other)
                     val leftProvCast = Cast(leftProvAttr, StringType)
@@ -130,6 +142,8 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
                             matchedTag // Otherwise, we combine the two (Match found)
                         )
                     )
+                    // ------------------
+
                     // We create an alias for the combined provenance expression to give it the correct column name in the output
                     val combinedTag = Alias(joinLogicExpr, provenanceColName)()
 
@@ -172,9 +186,9 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
                     Sort(newOrder, global, child, hint)
                 } else {
                     s
-                }
+                }   
             // We look for 'Aggregate' nodes, which represent GROUP BY statements
-            case a @ Aggregate(groupingExprs, aggregateExprs, child, _) =>
+            case a @ Aggregate(groupingExprs, aggregateExprs, child, hint) =>
                 val childHasProv = hasProv(child, provenanceColName)
                 val aggregateHasProv = hasProv(a, provenanceColName)
                 // If the child has the provenance column but the aggregate does not
@@ -182,57 +196,47 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
                 if (childHasProv && !aggregateHasProv) {
                     val provAttr = getProvAttr(child, provenanceColName)
                     val newAggregateExprs = aggregateExprs :+ Alias(CollectSet(provAttr), provenanceColName)()
-                    Aggregate(groupingExprs, newAggregateExprs, child)
+                    Aggregate(groupingExprs, newAggregateExprs, child, hint)
                 } else {
                     a
                 }
-                      
-            // We look for 'Distinct' nodes, which represent Distinct statements
-            // We treat Distinct as a special case of Aggregate with all columns as
-            // grouping columns and the same tag logic as Aggregate
-            case d @ Distinct(child) =>
-                // We ensure the child is tagged
+
+            // We look for 'Distinct' nodes, which represent DISTINCT statements
+            case d @ Distinct(child) => 
+                // We ensure the child is tagged 
                 val childHasProv = hasProv(child, provenanceColName)
-                val distinctHasProv = hasProv(d, provenanceColName)
-                if (childHasProv && !distinctHasProv) {
-                    val provAttr = getProvAttr(child, provenanceColName)
+                val childAttr = getProvAttr(child, provenanceColName)
+                val childCast = Cast(childAttr, StringType)
+                if (childHasProv && !d.getTagValue(PROCESSED_TAG2).contains(true)) {
 
                     // The columns of grouping must be all the columns of the child except the provenance column.
-                    val groupingCols =
-                        child.output.filter(_.name != provenanceColName)
+                    val groupingCols = child.output.filter(_.name != provenanceColName)
 
                     // We use the same logic as aggregation to merge the tags(A ⊕ B)
-                    val collectSet = AggregateExpression(
-                        CollectSet(provAttr),
-                        Complete,
-                        isDistinct = false
-                    )
+                    val collectSet = AggregateExpression(CollectSet(childCast), Complete, isDistinct = false)
                     val combinedTag = Alias(
-                        Concat(
-                        Seq(
-                            Literal("{"),
-                            ConcatWs(Seq(Literal(" ⊕ "), collectSet)),
-                            Literal("}")
-                        )
-                        ),
-                        provenanceColName
-                    )()
-
+                            Concat(Seq(
+                                Literal("{"),
+                                ConcatWs(Seq(Literal(" ⊕ "), collectSet)),
+                                Literal("}")
+                            )),
+                            provenanceColName
+                        )()
+                    
                     // We replace the Distinct node with an Aggregate node with
                     // the same grouping columns and the new tag as aggregate expression
                     Aggregate(
-                        groupingExpressions = groupingCols,
-                        aggregateExpressions = groupingCols :+ combinedTag,
-                        child = child
+                    groupingExpressions = groupingCols,
+                    aggregateExpressions = groupingCols :+ combinedTag,
+                    child = child
                     )
                 } else {
-                    d      
+                    d   
                 }
 
-            }
             
 
-
+            }
           }
         }
     }
