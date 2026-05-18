@@ -26,9 +26,11 @@ import org.apache.spark.sql.catalyst.expressions.Cast
 import org.apache.spark.sql.types.StringType
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateExpression
 import org.apache.spark.sql.catalyst.expressions.aggregate.Complete
-import org.apache.spark.sql.catalyst.expressions.ConcatWs
 import org.apache.spark.sql.catalyst.plans.logical.Deduplicate
 import org.apache.spark.sql.catalyst.plans.logical.Distinct
+import org.apache.spark.sql.catalyst.expressions.ConcatWs
+import org.apache.spark.sql.catalyst.expressions.GreaterThan
+import org.apache.spark.sql.catalyst.expressions.Size
 
 case class LogicalPlanWithProvenance(spark: SparkSession)
     extends Rule[LogicalPlan] {
@@ -123,9 +125,9 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
                     val rightProvCast = Cast(rightProvAttr, StringType) 
 
                     // Operator ⊗ represents the combination of provenance tags from both sides of the join.
-                    val matchedTag = Concat(
+                    val matchedTag = Cast(Concat(
                     Seq(Literal("("), leftProvCast, Literal(" ⊗ "), rightProvCast, Literal(")"))
-                    )
+                    ), StringType)
 
                     // The logic for combining provenance tags in a join is as follows:
                     // - If the left tag is null, it means we have a Right Outer Join and we keep the right tag.
@@ -193,7 +195,8 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
                 // we need to add it to the aggregate expressions.
                 if (childHasProv && !aggregateHasProv) {
                     val provAttr = getProvAttr(child, provenanceColName)
-                    val newAggregateExprs = aggregateExprs :+ Alias(CollectSet(provAttr), provenanceColName)()
+                    val provAttrCast = Cast(provAttr, StringType)
+                    val newAggregateExprs = aggregateExprs :+ Alias(Cast(CollectSet(provAttrCast), StringType), provenanceColName)()
                     Aggregate(groupingExprs, newAggregateExprs, child, hint)
                 } else {
                     a
@@ -212,22 +215,24 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
                     val groupingCols = child.output.filter(_.name != provenanceColName)
 
                     // We use the same logic as aggregation to merge the tags(A ⊕ B)
-                    val collectSet = AggregateExpression(CollectSet(childCast), Complete, isDistinct = false)
-                    val combinedTag = Alias(
-                            Concat(Seq(
-                                Literal("{"),
-                                ConcatWs(Seq(Literal(" ⊕ "), collectSet)),
-                                Literal("}")
-                            )),
-                            provenanceColName
-                        )()
+                    val collectSetExpr = AggregateExpression(CollectSet(childCast), Complete, isDistinct = false)
+
+                    val joinedArray = ConcatWs(Seq(Literal(" ⊕ "), collectSetExpr))
+
+                    val withBraces = Concat(Seq(Literal("{"), joinedArray, Literal("}")))
+                    val conditionalFormat = If(
+                        GreaterThan(Size(collectSetExpr), Literal(1)),
+                        withBraces,
+                        joinedArray
+                    )
+                    val combinedTag = Alias(conditionalFormat, provenanceColName)()
                     
                     // We replace the Distinct node with an Aggregate node with
                     // the same grouping columns and the new tag as aggregate expression
                     Aggregate(
-                    groupingExpressions = groupingCols,
-                    aggregateExpressions = groupingCols :+ combinedTag,
-                    child = child
+                        groupingExpressions = groupingCols,
+                        aggregateExpressions = groupingCols :+ combinedTag,
+                        child = child
                     )
                 } else {
                     d   
@@ -237,32 +242,32 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
             // (e.g., distinct in DataFrame API or dropDuplicates in DataFrame API)
             case d @ Deduplicate(keys, child) =>
                 val childHasProv = hasProv(child, provenanceColName)
-                val deduplicateHasProv = hasProv(d, provenanceColName)
+                // val deduplicateHasProv = hasProv(d, provenanceColName)
 
-                if (childHasProv && !deduplicateHasProv) {
+                if (childHasProv) {
                     val provAttr = getProvAttr(child, provenanceColName)
-                    
+                    val provAttrCast = Cast(provAttr, StringType)
                     val validKeys = keys.filter(_.name != provenanceColName)
 
-                    val collectSet = AggregateExpression(
-                        CollectSet(provAttr),
+                    val collectSetExpr = AggregateExpression(
+                        CollectSet(provAttrCast),
                         Complete,
                         isDistinct = false
                     )
 
-                    val combinedTag = Alias(
-                        Concat(Seq(
-                            Literal("{"),
-                            ConcatWs(Seq(Literal(" ⊕ "), collectSet)),
-                            Literal("}")
-                        )),
-                        provenanceColName
-                    )()
+                    val joinedArray = ConcatWs(Seq(Literal(" ⊕ "), collectSetExpr))
+
+                    val withBraces = Concat(Seq(Literal("{"), joinedArray, Literal("}")))
+                    val conditionalFormat = If(
+                        GreaterThan(Size(collectSetExpr), Literal(1)),
+                        withBraces,
+                        joinedArray
+                    )
+                    val combinedTag = Alias(conditionalFormat, provenanceColName)()
 
                     val newAggregateExprs = validKeys :+ combinedTag
-                    val newAggregate = Aggregate(validKeys, newAggregateExprs, child)
-                    newAggregate.setTagValue(PROCESSED_TAG2, true)
-                    newAggregate
+
+                    Aggregate(validKeys, newAggregateExprs, child)
                     
                 } else {
                     d
