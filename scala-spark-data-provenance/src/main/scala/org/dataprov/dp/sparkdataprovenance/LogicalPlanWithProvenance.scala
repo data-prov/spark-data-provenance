@@ -208,10 +208,11 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
             case d @ Distinct(child) => 
                 // We ensure the child is tagged 
                 val childHasProv = hasProv(child, provenanceColName)
-                val childAttr = getProvAttr(child, provenanceColName)
-                val childCast = Cast(childAttr, StringType)
+                
                 if (childHasProv && !d.getTagValue(PROCESSED_TAG2).contains(true)) {
-
+                    
+                    val childAttr = getProvAttr(child, provenanceColName)
+                    val childCast = Cast(childAttr, StringType)
                     // The columns of grouping must be all the columns of the child except the provenance column.
                     val groupingCols = child.output.filter(_.name != provenanceColName)
 
