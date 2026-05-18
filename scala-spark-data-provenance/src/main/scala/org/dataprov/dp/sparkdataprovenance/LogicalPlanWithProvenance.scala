@@ -54,7 +54,6 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
             .getConfString(provenanceEnabledConf, "false") == "true"
         val provenanceColName: String = provenanceColumnName(spark)
 
-
         if (!provenanceEnabled) {
             plan // If the feature is not enabled, return the plan unchanged
         } else {
@@ -219,7 +218,7 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
                 // We ensure the child is tagged 
                 val childHasProv = hasProv(child, provenanceColName)
                 
-                if (childHasProv && !d.getTagValue(PROCESSED_TAG2).contains(true)) {
+                if (childHasProv) {
 
                     val childAttr = getProvAttr(child, provenanceColName)
                     val childCast = Cast(childAttr, StringType)
