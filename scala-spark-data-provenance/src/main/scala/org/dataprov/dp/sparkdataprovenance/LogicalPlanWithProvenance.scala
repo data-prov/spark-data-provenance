@@ -47,10 +47,6 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
     // Custom tag to mark that a join has been processed to avoid infinite loops
     val PROCESSED_TAG: TreeNodeTag[Boolean] =
         TreeNodeTag[Boolean]("provenance_processed")
-    
-    // Custom tag to mark that a distinct has been processed to avoid infinite loops
-    val PROCESSED_TAG2: TreeNodeTag[Boolean] =
-        TreeNodeTag[Boolean]("provenance_processed_distinct")
 
     override def apply(plan: LogicalPlan): LogicalPlan = {
         // Get Spark provenance configurations
