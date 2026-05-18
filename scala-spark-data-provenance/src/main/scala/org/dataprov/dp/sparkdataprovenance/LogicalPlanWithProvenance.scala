@@ -31,19 +31,18 @@ import org.apache.spark.sql.catalyst.plans.logical.Distinct
 import org.apache.spark.sql.catalyst.expressions.ConcatWs
 import org.apache.spark.sql.catalyst.expressions.GreaterThan
 import org.apache.spark.sql.catalyst.expressions.Size
+import org.apache.spark.sql.catalyst.plans.logical.LogicalPlanIntegrity
 
 case class LogicalPlanWithProvenance(spark: SparkSession)
     extends Rule[LogicalPlan] {
     // Check if a plan already has provenance propagated
     def hasProv(plan: LogicalPlan, provenanceColName: String): Boolean =
-        // LogicalPlanIntegrity.canGetOutputAttrs(plan) && 
-        plan.output.exists(_.name == provenanceColName)
+        LogicalPlanIntegrity.canGetOutputAttrs(plan) && plan.output.exists(_.name == provenanceColName)
 
     // Find and get the provenance attribute in a plan 
     def getProvAttr(plan: LogicalPlan, provenanceColName: String): Attribute =
-        // if (LogicalPlanIntegrity.canGetOutputAttrs(plan)) 
-        plan.output.find(_.name == provenanceColName).get
-        //  else throw new IllegalArgumentException("Plan is not resolved")
+        if (LogicalPlanIntegrity.canGetOutputAttrs(plan)) plan.output.find(_.name == provenanceColName).get
+        else throw new IllegalArgumentException("Plan is not resolved")
 
     // Custom tag to mark that a join has been processed to avoid infinite loops
     val PROCESSED_TAG: TreeNodeTag[Boolean] =
@@ -196,7 +195,9 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
                 if (childHasProv && !aggregateHasProv) {
                     val provAttr = getProvAttr(child, provenanceColName)
                     val provAttrCast = Cast(provAttr, StringType)
+
                     val newAggregateExprs = aggregateExprs :+ Alias(Cast(CollectSet(provAttrCast), StringType), provenanceColName)()
+
                     Aggregate(groupingExprs, newAggregateExprs, child, hint)
                 } else {
                     a
@@ -214,7 +215,6 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
                     // The columns of grouping must be all the columns of the child except the provenance column.
                     val groupingCols = child.output.filter(_.name != provenanceColName)
 
-                    // We use the same logic as aggregation to merge the tags(A ⊕ B)
                     val collectSetExpr = AggregateExpression(CollectSet(childCast), Complete, isDistinct = false)
 
                     val joinedArray = ConcatWs(Seq(Literal(" ⊕ "), collectSetExpr))
