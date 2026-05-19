@@ -5,6 +5,7 @@ import org.scalatest.matchers.should.Matchers
 import org.dataprov.dp.sparkdataprovenance.DataFrameProvenanceTransformations._
 import com.github.mrpowers.spark.fast.tests.DataFrameComparer
 import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.functions.col
 
 
 class ProvenanceAddTest extends AnyFunSpec with Matchers with SparkSessionTestWrapper with DataFrameComparer with SparkConfTestUtils {
@@ -73,6 +74,26 @@ class ProvenanceAddTest extends AnyFunSpec with Matchers with SparkSessionTestWr
       }
     }
 
+    it("should add a provenance column to a dataframe with a provided expression") {
+      val df = toyDf
+      val providedProvenance = col("B")
+
+      val dfWithProv = addProvenance(df, providedProvenance)
+      val expected = df.withColumn(defaultProvenanceColName, col("B"))
+
+      assertSmallDataFrameEquality(dfWithProv, expected)
+    }
+
+    it("should replace an existing provenance column on a dataframe when a provided expression is used") {
+      val df = toyDf
+      val withInitialProv = addProvenance(df, col("B"))
+
+      val updated = addProvenance(withInitialProv, col("C"))
+      val expected = df.withColumn(defaultProvenanceColName, col("C"))
+
+      assertSmallDataFrameEquality(updated, expected)
+    }
+
 
     it("should add a provenance column to a view iff not already present") {
       val df = toyDf
@@ -98,6 +119,27 @@ class ProvenanceAddTest extends AnyFunSpec with Matchers with SparkSessionTestWr
         assertProvenanceColumnAndDataPreserved(df, customProvColName, spark.table(viewName))
         assertViewProvenanceIdempotence(viewName)
       }
+    }
+
+    it("should add a provenance column to a view with a provided expression") {
+      val df = toyDf
+      df.createOrReplaceTempView(viewName)
+
+      addProvenance(spark, viewName, col("B"))
+
+      val expected = df.withColumn(defaultProvenanceColName, col("B"))
+      assertSmallDataFrameEquality(spark.table(viewName), expected)
+    }
+
+    it("should replace an existing provenance column on a view when a provided expression is used") {
+      val df = toyDf
+      df.createOrReplaceTempView(viewName)
+
+      addProvenance(spark, viewName, col("B"))
+      addProvenance(spark, viewName, col("C"))
+
+      val expected = df.withColumn(defaultProvenanceColName, col("C"))
+      assertSmallDataFrameEquality(spark.table(viewName), expected)
     }
 
   }
