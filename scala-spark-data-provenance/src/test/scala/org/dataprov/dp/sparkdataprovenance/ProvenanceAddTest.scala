@@ -26,12 +26,22 @@ class ProvenanceAddTest extends AnyFunSpec with Matchers with SparkSessionTestWr
     assert(dfWithProv.columns.contains(provColName))
 
     // 2. The original data (except provenance) should be preserved
-    assertSmallDataFrameEquality(dfWithProv.drop(provColName), df)
+    spark.conf.set("spark.provenance.enabled", "false")
+    try {
+      assertSmallDataFrameEquality(dfWithProv.drop(provColName), df)
+    } finally {
+      spark.conf.set("spark.provenance.enabled", "true")
+    }
   }
 
   private def assertDataFrameProvenanceIdempotence(dfWithProv: DataFrame): Unit = {
     // If the dataframe already has a provenance column, it should stay unchanged and no new column should be added
-    assertSmallDataFrameEquality(addProvenance(dfWithProv), dfWithProv)
+    spark.conf.set("spark.provenance.enabled", "false")
+    try {
+      assertSmallDataFrameEquality(addProvenance(dfWithProv), dfWithProv)
+    } finally {
+      spark.conf.set("spark.provenance.enabled", "true")
+    }
   }
 
   private def assertViewProvenanceIdempotence(viewName: String): Unit = {
@@ -50,7 +60,7 @@ class ProvenanceAddTest extends AnyFunSpec with Matchers with SparkSessionTestWr
   }
 
   describe("Adding provenance tag (column) to a DataFrame/view") {
-    it("should add a provenance column to a dataframe iff not already present") {
+    it("should add a provenance column to a dataframe if not already present") {
       val df = toyDf
 
       // Add provenance to dataframe
@@ -61,7 +71,7 @@ class ProvenanceAddTest extends AnyFunSpec with Matchers with SparkSessionTestWr
       assertDataFrameProvenanceIdempotence(dfWithProv)
     }
 
-    it("should add a provenance column to a dataframe iff not already present with custom column name") {
+    it("should add a provenance column to a dataframe if not already present with custom column name") {
       val df = toyDf
 
       withSparkConf(spark, provenanceColConfKey, customProvColName) {
@@ -95,7 +105,7 @@ class ProvenanceAddTest extends AnyFunSpec with Matchers with SparkSessionTestWr
     }
 
 
-    it("should add a provenance column to a view iff not already present") {
+    it("should add a provenance column to a view if not already present") {
       val df = toyDf
       df.createOrReplaceTempView(viewName)
 
@@ -107,7 +117,7 @@ class ProvenanceAddTest extends AnyFunSpec with Matchers with SparkSessionTestWr
       assertViewProvenanceIdempotence(viewName)
     }
 
-    it("should add a provenance column to a view iff not already present with custom column name") {
+    it("should add a provenance column to a view if not already present with custom column name") {
       val df = toyDf
       df.createOrReplaceTempView(viewName)
 
