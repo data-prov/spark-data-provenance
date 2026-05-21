@@ -4,7 +4,7 @@ import com.github.mrpowers.spark.fast.tests.DataFrameComparer
 import org.scalatest.funspec.AnyFunSpec
 import org.scalatest.matchers.should.Matchers
 import org.apache.spark.sql.DataFrame
-import org.apache.spark.sql.functions.{array_union, col, concat, lit}
+import org.apache.spark.sql.functions.col
 
 import org.dataprov.dp.sparkdataprovenance.DataFrameProvenanceTransformations._
 
@@ -50,13 +50,27 @@ class ProvenanceFilterTest extends AnyFunSpec with Matchers with SparkSessionTes
 
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvFiltered)
     }
+
+    it("should preserve the provenance column and its values when filtering with complex conditions") {
+      val df = toyDf
+
+      val dfWithProvFiltered = addProvenance(df, col("B")).filter(col("B") > 1 && col("C") < 4).select("A", "B")
+      val expected = df.filter(col("B") > 1 && col("C") < 4).select("A", "B").withColumn(defaultProvenanceColName, col("B"))
+
+      assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvFiltered)
+    }
+
+    it("should preserve the provenance column and its values when filtering with complex conditions with views") {
+      val df = toyDf
+      df.createOrReplaceTempView(viewName)
+      addProvenance(spark, viewName, col("B"))
+
+      val dfWithProvFiltered = spark.sql(s"SELECT A, B FROM $viewName WHERE B > 1 AND C < 4")
+      val expected = df.filter(col("B") > 1 && col("C") < 4).select("A", "B").withColumn(defaultProvenanceColName, col("B"))
+
+      assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvFiltered)
+    }
   }
-
-  
-
-
-    
-
 }
 
 
