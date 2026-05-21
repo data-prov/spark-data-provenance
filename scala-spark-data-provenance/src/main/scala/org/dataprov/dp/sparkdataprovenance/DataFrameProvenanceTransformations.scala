@@ -39,6 +39,7 @@ object DataFrameProvenanceTransformations {
     } else {
       df.withColumn(colName, col.getOrElse(defaultProvenanceColumn))
     }
+    // FIXME: if col references a column that is absent from df, the provenance column won't be added
   }
 
   /** Adds the configured provenance column to a temp view when not already
@@ -98,7 +99,9 @@ object DataFrameProvenanceTransformations {
   }
 
   implicit class DataFrameWithProvenance(df: DataFrame) {
-    def addProvenanceColumn(col: Option[Column] = None): DataFrame =
+    def addProvenanceColumn: DataFrame =
+      DataFrameProvenanceTransformations.addProvenance(df)
+    def addProvenanceColumn(col: Column): DataFrame =
       DataFrameProvenanceTransformations.addProvenance(df, col)
     def removeProvenanceColumn: DataFrame =
       DataFrameProvenanceTransformations.removeProvenance(df)
