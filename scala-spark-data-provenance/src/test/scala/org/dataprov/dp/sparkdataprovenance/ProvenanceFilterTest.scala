@@ -12,28 +12,22 @@ class ProvenanceFilterTest extends AnyFunSpec with Matchers with SparkSessionTes
   import spark.implicits._
   spark.conf.set("spark.provenance.enabled", "true")
 
-  private def toyDf: DataFrame = Seq(
+  private def toyDf: DataFrame = Seq[(String, Int, java.lang.Double)](
     ("a", 1, 2.3),
     ("a", 1, 2.3),
     ("d", 2, 3.4),
-    ("f", 3, 4.5)
+    ("f", 3, null) 
   ).toDF("A", "B", "C")
 
- 
-  private val viewName: String = "toy_view"
-
   private def assertProvenanceColumnAndDataPreserved(dfExpected: DataFrame, provColName: String, dfWithProv: DataFrame): Unit = {
-    // 1. The provenance column should be added
     assert(dfWithProv.columns.contains(provColName))
-    // 2. The expected dataframe (including the provenance column) should be equal to the actual dataframe with provenance
     assertSmallDataFrameEquality(dfWithProv, dfExpected)
-
   }
 
   describe("Filtering rows from a DataFrame/view with provenance") {
+    
     it("should preserve the provenance column and its values when filtering") {
       val df = toyDf
-
       val dfWithProvFiltered = addProvenance(df, col("B")).filter(col("B") > 1).select("A", "B")
       val expected = df.filter(col("B") > 1).select("A", "B").withColumn(defaultProvenanceColName, col("B"))
 
@@ -41,11 +35,12 @@ class ProvenanceFilterTest extends AnyFunSpec with Matchers with SparkSessionTes
     }
 
     it("should preserve the provenance column and its values when filtering with views") {
+      val vName = "view_filter_nominal" 
       val df = toyDf
-      df.createOrReplaceTempView(viewName)
-      addProvenance(spark, viewName, col("B"))
+      df.createOrReplaceTempView(vName)
+      addProvenance(spark, vName, col("B"))
 
-      val dfWithProvFiltered = spark.sql(s"SELECT A, B FROM $viewName WHERE B > 1")
+      val dfWithProvFiltered = spark.sql(s"SELECT A, B FROM $vName WHERE B > 1")
       val expected = df.filter(col("B") > 1).select("A", "B").withColumn(defaultProvenanceColName, col("B"))
 
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvFiltered)
@@ -53,7 +48,6 @@ class ProvenanceFilterTest extends AnyFunSpec with Matchers with SparkSessionTes
 
     it("should preserve the provenance column and its values when filtering with complex conditions") {
       val df = toyDf
-
       val dfWithProvFiltered = addProvenance(df, col("B")).filter(col("B") > 1 && col("C") < 4).select("A", "B")
       val expected = df.filter(col("B") > 1 && col("C") < 4).select("A", "B").withColumn(defaultProvenanceColName, col("B"))
 
@@ -61,16 +55,95 @@ class ProvenanceFilterTest extends AnyFunSpec with Matchers with SparkSessionTes
     }
 
     it("should preserve the provenance column and its values when filtering with complex conditions with views") {
+      val vName = "view_filter_complex_and"
       val df = toyDf
-      df.createOrReplaceTempView(viewName)
-      addProvenance(spark, viewName, col("B"))
+      df.createOrReplaceTempView(vName)
+      addProvenance(spark, vName, col("B"))
 
-      val dfWithProvFiltered = spark.sql(s"SELECT A, B FROM $viewName WHERE B > 1 AND C < 4")
+      val dfWithProvFiltered = spark.sql(s"SELECT A, B FROM $vName WHERE B > 1 AND C < 4")
       val expected = df.filter(col("B") > 1 && col("C") < 4).select("A", "B").withColumn(defaultProvenanceColName, col("B"))
+
+      assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvFiltered)
+    }
+
+    it("should preserve the provenance column and its values when filtering with OR conditions") {
+      val df = toyDf
+      val dfWithProvFiltered = addProvenance(df, col("B")).filter(col("B") > 1 || col("C") < 3).select("A", "B")
+      val expected = df.filter(col("B") > 1 || col("C") < 3).select("A", "B").withColumn(defaultProvenanceColName, col("B"))
+
+      assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvFiltered)
+    }
+
+    it("should preserve the provenance column and its values when filtering with OR conditions with views") {
+      val vName = "view_filter_complex_or" 
+      val df = toyDf
+      df.createOrReplaceTempView(vName)
+      addProvenance(spark, vName, col("B"))
+
+      val dfWithProvFiltered = spark.sql(s"SELECT A, B FROM $vName WHERE B > 1 OR C < 3")
+      val expected = df.filter(col("B") > 1 || col("C") < 3).select("A", "B").withColumn(defaultProvenanceColName, col("B"))
+
+      assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvFiltered)
+    }
+
+    it("should preserve the provenance column and its values when filtering with a mix of AND/OR conditions") {
+      val df = toyDf
+      val dfWithProvFiltered = addProvenance(df, col("B")).filter((col("B") > 1 && col("C") < 4) || col("A") === "a").select("A", "B")
+      val expected = df.filter((col("B") > 1 && col("C") < 4) || col("A") === "a").select("A", "B").withColumn(defaultProvenanceColName, col("B"))
+
+      assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvFiltered)
+    }
+
+    it("should preserve the provenance column and its values when filtering with a mix of AND/OR conditions with views") {
+      val vName = "view_filter_mixed" 
+      val df = toyDf
+      df.createOrReplaceTempView(vName)
+      addProvenance(spark, vName, col("B"))
+
+      val dfWithProvFiltered = spark.sql(s"SELECT A, B FROM $vName WHERE (B > 1 AND C < 4) OR A = 'a'")
+      val expected = df.filter((col("B") > 1 && col("C") < 4) || col("A") === "a").select("A", "B").withColumn(defaultProvenanceColName, col("B"))
+
+      assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvFiltered)
+    }
+
+    it("should preserve the provenance column and its values when filtering with NOT conditions") {
+      val df = toyDf
+      val dfWithProvFiltered = addProvenance(df, col("B")).filter(!(col("B") > 1)).select("A", "B")
+      val expected = df.filter(!(col("B") > 1)).select("A", "B").withColumn(defaultProvenanceColName, col("B"))
+
+      assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvFiltered)
+    }
+
+    it("should preserve the provenance column and its values when filtering with NOT conditions with views") {
+      val vName = "view_filter_not"
+      val df = toyDf
+      df.createOrReplaceTempView(vName)
+      addProvenance(spark, vName, col("B"))
+
+      val dfWithProvFiltered = spark.sql(s"SELECT A, B FROM $vName WHERE NOT (B > 1)")
+      val expected = df.filter(!(col("B") > 1)).select("A", "B").withColumn(defaultProvenanceColName, col("B"))
+
+      assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvFiltered)
+    }
+
+    it("should preserve the provenance column and its values when filtering with IS NULL conditions") {
+      val df = toyDf
+      val dfWithProvFiltered = addProvenance(df, col("B")).filter(col("C").isNull).select("A", "B", "C")
+      val expected = df.filter(col("C").isNull).select("A", "B", "C").withColumn(defaultProvenanceColName, col("B"))
+
+      assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvFiltered)
+    }
+
+    it("should preserve the provenance column and its values when filtering with IS NULL conditions with views") {
+      val vName = "view_filter_isnull" 
+      val df = toyDf
+      df.createOrReplaceTempView(vName)
+      addProvenance(spark, vName, col("B"))
+
+      val dfWithProvFiltered = spark.sql(s"SELECT A, B, C FROM $vName WHERE C IS NULL")
+      val expected = df.filter(col("C").isNull).select("A", "B", "C").withColumn(defaultProvenanceColName, col("B"))
 
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvFiltered)
     }
   }
 }
-
-
