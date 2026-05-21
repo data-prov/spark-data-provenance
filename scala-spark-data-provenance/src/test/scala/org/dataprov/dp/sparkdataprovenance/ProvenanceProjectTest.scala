@@ -22,18 +22,15 @@ class ProvenanceProjectTest extends AnyFunSpec with Matchers with SparkSessionTe
   private def assertProvenanceColumnAndDataPreserved(dfExpected: DataFrame, provColName: String, dfWithProv: DataFrame): Unit = {
     // 1. The provenance column should be added
     assert(dfWithProv.columns.contains(provColName))
-
-    // 2. The original data (except provenance) should be preserved
+    // 2. The expected dataframe (including the provenance column) should be equal to the actual dataframe with provenance
     assertSmallDataFrameEquality(dfWithProv, dfExpected)
 
   }
 
-  
-
   describe("Projecting columns from a DataFrame/view with provenance") {
     it("should preserve the provenance column and its values when projecting") {
       val df = toyDf
-      
+
       val dfWithProvProjected = addProvenance(df, col("B")).select("A", "B")
       val expected = df.select("A", "B").withColumn(defaultProvenanceColName, col("B"))
 
