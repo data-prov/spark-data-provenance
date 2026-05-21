@@ -128,6 +128,15 @@ class ProvenanceProjectTest extends AnyFunSpec with Matchers with SparkSessionTe
 
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvProjected)
     }
+
+    it("should preserve provenance when projecting and filtering columns") {
+      val df = toyDf
+
+      val dfWithProvProjected = addProvenance(df, col("B")).filter(col("B") > 1).select("A", "B")
+      val expected = df.filter(col("B") > 1).select("A", "B").withColumn(defaultProvenanceColName, col("B"))
+
+      assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvProjected)
+    }
   }
 }
 
