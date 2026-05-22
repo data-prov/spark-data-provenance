@@ -323,39 +323,25 @@ class ProvenanceJoinTest extends AnyFunSpec with Matchers with SparkSessionTestW
     }
 
     it("should preserve the provenance column and its values when joining with a non-provenance tagged DataFrame") {
-      val dfLeft : DataFrame = Seq(
-        ("A", 1, "x"),
-        ("B", 2, "y"),
-        ("C", 3, "z")
-      ).toDF("A", "B", "C")
-      val dfRight : DataFrame = Seq(
-        ("A"),
-        ("B"),
-      ).toDF("A")
+      val dfLeft = toyDfLeft
+      val dfRight = toyDfRight
 
       val dfWithProvRight = addProvenance(dfRight, col("A"))
-      val dfWithProvJoin = dfLeft.join(dfWithProvRight, Seq("A"), "left").select("A", "B", "C")
+      val dfWithProvJoin = dfLeft.join(dfWithProvRight, Seq("A"), "left").select("A", "B", "C", "D")
 
       val dfRightSide = dfRight.withColumn("rightProv", col("A").cast("string"))
       val expected: DataFrame = dfLeft.join(dfRightSide, Seq("A"), "left")
         .withColumn(defaultProvenanceColName, col("rightProv"))
         .drop("rightProv")
-        .select("A", "B", "C", defaultProvenanceColName)
-        .orderBy("A", "B", "C")
+        .select("A", "B", "C", "D", defaultProvenanceColName)
+        .orderBy("A", "B", "C", "D")
 
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
     }
 
     it("should preserve the provenance column and its values when joining with a non-provenance tagged DataFrame with views") {
-      val dfLeft : DataFrame = Seq(
-        ("A", 1, "x"),
-        ("B", 2, "y"),
-        ("C", 3, "z")
-      ).toDF("A", "B", "C")
-      val dfRight : DataFrame = Seq(
-        ("A"),
-        ("B"),
-      ).toDF("A")
+      val dfLeft = toyDfLeft
+      val dfRight = toyDfRight
 
       dfLeft.createOrReplaceTempView("left_view")
       dfRight.createOrReplaceTempView("right_view")
@@ -363,7 +349,7 @@ class ProvenanceJoinTest extends AnyFunSpec with Matchers with SparkSessionTestW
 
       val dfWithProvJoin = spark.sql(
         s"""
-           SELECT l.A, l.B, l.C
+           SELECT l.A, l.B, l.C, r.D
            FROM left_view l
            LEFT JOIN right_view r ON l.A = r.A
         """)
@@ -372,8 +358,8 @@ class ProvenanceJoinTest extends AnyFunSpec with Matchers with SparkSessionTestW
       val expected: DataFrame = dfLeft.join(dfRightSide, Seq("A"), "left")
         .withColumn(defaultProvenanceColName, col("rightProv"))
         .drop("rightProv")
-        .select("A", "B", "C", defaultProvenanceColName)
-        .orderBy("A", "B", "C") 
+        .select("A", "B", "C", "D", defaultProvenanceColName)
+        .orderBy("A", "B", "C", "D") 
 
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
     }
