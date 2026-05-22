@@ -18,6 +18,7 @@ import org.apache.spark.sql.catalyst.expressions.SortOrder
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateExpression
 import org.apache.spark.sql.catalyst.expressions.aggregate.CollectSet
 import org.apache.spark.sql.catalyst.expressions.aggregate.Complete
+import org.apache.spark.sql.catalyst.plans.Cross
 import org.apache.spark.sql.catalyst.plans.logical.Aggregate
 import org.apache.spark.sql.catalyst.plans.logical.Deduplicate
 import org.apache.spark.sql.catalyst.plans.logical.Distinct
@@ -115,7 +116,7 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
           val isProcessed = j.getTagValue(PROCESSED_TAG).contains(true)
 
           if (
-            !isProcessed && condition.isDefined && (leftHasProv || rightHasProv)
+            !isProcessed && (condition.isDefined || joinType == Cross) && (leftHasProv || rightHasProv)
           ) {
             val leftProvAttr = getProvAttr(left, provenanceColName)
             val rightProvAttr = getProvAttr(right, provenanceColName)

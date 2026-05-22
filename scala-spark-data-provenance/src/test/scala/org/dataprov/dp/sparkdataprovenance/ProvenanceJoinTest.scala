@@ -212,7 +212,7 @@ class ProvenanceJoinTest extends AnyFunSpec with Matchers with SparkSessionTestW
 
       val dfWithProvJoin = spark.sql(
         s"""
-           SELECT COALESCE(l.A, r.A) AS A, l.B, l.C, r.D
+           SELECT coalesce(l.A, r.A) AS A, l.B, l.C, r.D
            FROM left_view l
            FULL OUTER JOIN right_view r ON l.A = r.A
         """)
@@ -229,6 +229,55 @@ class ProvenanceJoinTest extends AnyFunSpec with Matchers with SparkSessionTestW
         .select("A", "B", "C", "D", defaultProvenanceColName)
 
         assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
+    }
+    // TODO : test semi and anti joins once we decide on the expected provenance semantics for those operations
+    
+    it("should preserve the provenance column and its values when performing a cross join") {
+      val dfLeft = toyDfLeft
+      val dfRight = toyDfRight
+
+      val dfWithProvLeft = addProvenance(dfLeft, col("B"))
+      val dfWithProvRight = addProvenance(dfRight, col("D"))
+      val dfWithProvJoin = dfWithProvLeft.alias("l").crossJoin(dfWithProvRight.alias("r")).select("l.A", "l.B", "l.C", "r.D").orderBy("l.A", "l.B", "l.C", "r.D")
+
+      val dfLeftSide = dfLeft.alias("l").select("l.A", "l.B", "l.C").withColumn("leftProv", col("l.B").cast("string"))
+      val dfRightSide = dfRight.alias("r").select("r.A", "r.D").withColumn("rightProv", col("r.D").cast("string"))
+      
+      val expected: DataFrame = dfLeftSide.alias("l").crossJoin(dfRightSide.alias("r"))
+        .withColumn(defaultProvenanceColName, concat(lit("("), col("leftProv"), lit(" ⊗ "), col("rightProv"), lit(")")).cast("string"))
+        .drop("leftProv", "rightProv")
+        .select("l.A", "l.B", "l.C", "r.D", defaultProvenanceColName)
+        .orderBy("l.A", "l.B", "l.C", "r.D")
+
+      assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
+    }
+
+    it("should preserve the provenance column and its values when performing a cross join with views") {
+      val dfLeft = toyDfLeft
+      val dfRight = toyDfRight
+
+      dfLeft.createOrReplaceTempView("left_view")
+      dfRight.createOrReplaceTempView("right_view")
+      addProvenance(spark, "left_view", col("B"))
+      addProvenance(spark, "right_view", col("D"))
+
+      val dfWithProvJoin = spark.sql(
+        s"""
+           SELECT l.A, l.B, l.C, r.D
+           FROM left_view l
+           CROSS JOIN right_view r
+           ORDER BY l.A, l.B, l.C, r.D
+        """)
+
+      val dfLeftSide = dfLeft.alias("l").select("l.A", "l.B", "l.C").withColumn("leftProv", col("l.B").cast("string"))
+      val dfRightSide = dfRight.alias("r").select("r.A", "r.D").withColumn("rightProv", col("r.D").cast("string"))
+      
+      val expected: DataFrame = dfLeftSide.alias("l").crossJoin(dfRightSide.alias("r"))
+        .withColumn(defaultProvenanceColName, concat(lit("("), col("leftProv"), lit(" ⊗ "), col("rightProv"), lit(")")).cast("string"))
+        .drop("leftProv", "rightProv")
+        .select("l.A", "l.B", "l.C", "r.D", defaultProvenanceColName)
+        .orderBy("l.A", "l.B", "l.C", "r.D")
+      assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
     }
   }
 }
