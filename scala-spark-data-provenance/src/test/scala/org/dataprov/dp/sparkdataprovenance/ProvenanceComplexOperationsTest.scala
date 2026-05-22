@@ -78,13 +78,55 @@ class ProvenanceComplexOperationsTest extends AnyFunSpec with Matchers with Spar
       val dfLeftSide = dfLeft.alias("l").select("l.A", "l.B", "l.C").withColumn("leftProv", col("l.B").cast("string"))
       val dfRightSide = dfRight.alias("r").select("r.A", "r.D").withColumn("rightProv", col("r.D").cast("string"))
       val expected: DataFrame = dfLeftSide.alias("l").crossJoin(dfRightSide.alias("r"))
-         .withColumn(defaultProvenanceColName, concat(lit("("), col("leftProv"), lit(" ⊗ "), col("rightProv"), lit(")")).cast("string"))
-         .drop("leftProv", "rightProv")
-         .select("l.A", "l.B", "l.C", "r.D", defaultProvenanceColName)
-         .distinct()
-         .orderBy("l.A", "l.B", "l.C", "r.D")
+        .withColumn(defaultProvenanceColName, concat(lit("("), col("leftProv"), lit(" ⊗ "), col("rightProv"), lit(")")).cast("string"))
+        .drop("leftProv", "rightProv")
+        .select("l.A", "l.B", "l.C", "r.D", defaultProvenanceColName)
+        .distinct()
+        .orderBy("l.A", "l.B", "l.C", "r.D")
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
     }
+
+    it("should preserve the provenance column and its values when performing multiple joins"){
+      //TODO: Add more complex join scenarios (e.g., multiple joins...) and ensure provenance is preserved correctly.
+      val dfLeft = toyDfLeft
+      val dfRight = toyDfRight
+      val dfThird: DataFrame = Seq(
+        ("a", "m"),
+        ("d", "n"),
+        ("f", "o")
+      ).toDF("A", "E")
+
+      val dfWithProvLeft = addProvenance(dfLeft, col("B"))
+      val dfWithProvRight = addProvenance(dfRight, col("D"))
+      val dfWithProvThird = addProvenance(dfThird, col("E"))
+
+      dfWithProvLeft.createOrReplaceTempView("left_view_multi")
+      dfWithProvRight.createOrReplaceTempView("right_view_multi")
+      dfWithProvThird.createOrReplaceTempView("third_view_multi")
+
+      val dfWithProvJoin = spark.sql(
+        s"""
+           SELECT l.A, l.B, l.C, r.D, t.E
+           FROM left_view_multi l
+           INNER JOIN right_view_multi r ON l.A = r.A
+           INNER JOIN third_view_multi t ON l.A = t.A
+         """
+      ).orderBy("A", "B", "C", "D", "E")
+
+        val expected: DataFrame = dfLeft.alias("l")
+          .join(dfRight.alias("r"), "A")
+          .join(dfThird.alias("t"), "A")
+          .withColumn("leftProv", col("l.B").cast("string"))
+          .withColumn("rightProv", col("r.D").cast("string"))
+          .withColumn("thirdProv", col("t.E").cast("string"))
+          .withColumn(defaultProvenanceColName, concat(lit("(("), col("leftProv"), lit(" ⊗ "), col("rightProv"), lit(") ⊗ "), col("thirdProv"), lit(")")))
+          .drop("leftProv", "rightProv", "thirdProv")
+          .select("A", "B", "C", "D", "E", defaultProvenanceColName)
+          .orderBy("A", "B", "C", "D", "E")
+        assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
+    }
+
+    
   }
 }
 
