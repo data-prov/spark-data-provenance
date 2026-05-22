@@ -32,6 +32,7 @@ import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.types.StringType
 import org.dataprov.dp.sparkdataprovenance.DataFrameProvenanceTransformations._
+import org.apache.spark.sql.catalyst.expressions.Coalesce
 
 case class LogicalPlanWithProvenance(spark: SparkSession)
     extends Rule[LogicalPlan] {
@@ -133,31 +134,30 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
 
               // Operator ⊗ represents the combination of provenance tags from both sides of the join.
               val matchedTag = Cast(
-                Concat(
-                  Seq(
-                    Literal("("),
-                    leftProvCast,
-                    Literal(" ⊗ "),
-                    rightProvCast,
-                    Literal(")")
-                  )
+                If(
+                  And(IsNotNull(leftProvAttr), IsNotNull(rightProvAttr)),
+                  Concat(
+                    Seq(
+                      Literal("("),
+                      leftProvCast,
+                      Literal(" ⊗ "),
+                      rightProvCast,
+                      Literal(")")
+                    )
+                  ),
+                  Cast(Literal(null), StringType)
                 ),
                 StringType
               )
 
-              // The logic for combining provenance tags in a join is as follows:
-              // - If the left tag is null, it means we have a Right Outer Join and we keep the right tag.
-              // - If the right tag is null, it means we have a Left Outer Join and we keep the left tag.
-              // - If both tags are present, it means we have a Match and we combine the two tags using the ⊗ operator.
-              val joinLogicExpr = If(
-                IsNull(leftProvCast),
-                rightProvCast, // If the left tag is null (Right Outer Join), we keep the right one
-                If(
-                  IsNull(rightProvCast),
-                  leftProvCast, // If the right tag is null (Left Outer Join), we keep the left one
-                  matchedTag // Otherwise, we combine the two (Match found)
-                )
-              )
+              // Coalesce.nullable is true only when ALL children are nullable.
+              // leftProvCast may be non-nullable (e.g. when the source column is IntegerType,false).
+              // Wrapping it in If(IsNull(...), null, ...) forces nullable=true at the type level
+              // while preserving the original runtime value (the IsNull branch is never taken).
+              val leftProvNullable = If(IsNull(leftProvAttr), Literal(null, StringType), leftProvCast)
+              val rightProvNullable = If(IsNull(rightProvAttr), Literal(null, StringType), rightProvCast)
+              val joinLogicExpr = Coalesce(Seq(matchedTag, leftProvNullable, rightProvNullable))
+
 
               // We create an alias for the combined provenance expression to give it
               //  the correct column name in the output
@@ -174,8 +174,7 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
 
             } else {
               val rightProvAttr = getProvAttr(right, provenanceColName)
-              val rightProvCast = Cast(rightProvAttr, StringType)
-              val combinedTag = Alias(rightProvCast, provenanceColName)()
+              val combinedTag = Alias(rightProvAttr, provenanceColName)()
               Project(cleanedOutput :+ combinedTag, j)
 
             }
