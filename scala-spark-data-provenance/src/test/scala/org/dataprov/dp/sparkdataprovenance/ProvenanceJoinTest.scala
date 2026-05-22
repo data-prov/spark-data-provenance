@@ -279,6 +279,23 @@ class ProvenanceJoinTest extends AnyFunSpec with Matchers with SparkSessionTestW
         .orderBy("l.A", "l.B", "l.C", "r.D")
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
     }
+
+    it("should preserve the provenance column if only one side of the join has provenance") {
+      val dfLeft = toyDfLeft
+      val dfRight = toyDfRight
+
+      val dfWithProvLeft = addProvenance(dfLeft, col("B"))
+      val dfWithProvJoin = dfWithProvLeft.join(dfRight, Seq("A"), "inner").select("A", "B", "C", "D")
+
+      val dfLeftSide = dfLeft.select("A", "B", "C").withColumn("leftProv", col("B").cast("string"))
+      val expected: DataFrame = dfLeftSide.join(dfRight, Seq("A"), "inner")
+        .withColumn(defaultProvenanceColName, col("leftProv"))
+        .drop("leftProv")
+        .select("A", "B", "C", "D", defaultProvenanceColName)
+        .orderBy("A", "B", "C", "D") 
+
+      assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
+    }
   }
 }
 

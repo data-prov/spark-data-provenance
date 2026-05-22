@@ -115,60 +115,70 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
           // to combine the provenance tags from both sides.
           val isProcessed = j.getTagValue(PROCESSED_TAG).contains(true)
 
-          if (
-            !isProcessed && (condition.isDefined || joinType == Cross) && (leftHasProv || rightHasProv)
-          ) {
-            val leftProvAttr = getProvAttr(left, provenanceColName)
-            val rightProvAttr = getProvAttr(right, provenanceColName)
-
-            // We need to cast the provenance attributes to string to be able to concatenate them,
-            // as they can be of different types (e.g., string for one side and array for the other)
-            val leftProvCast = Cast(leftProvAttr, StringType)
-            val rightProvCast = Cast(rightProvAttr, StringType)
-
-            // Operator ⊗ represents the combination of provenance tags from both sides of the join.
-            val matchedTag = Cast(
-              Concat(
-                Seq(
-                  Literal("("),
-                  leftProvCast,
-                  Literal(" ⊗ "),
-                  rightProvCast,
-                  Literal(")")
-                )
-              ),
-              StringType
-            )
-
-            // The logic for combining provenance tags in a join is as follows:
-            // - If the left tag is null, it means we have a Right Outer Join and we keep the right tag.
-            // - If the right tag is null, it means we have a Left Outer Join and we keep the left tag.
-            // - If both tags are present, it means we have a Match and we combine the two tags using the ⊗ operator.
-            val joinLogicExpr = If(
-              IsNull(leftProvCast),
-              rightProvCast, // If the left tag is null (Right Outer Join), we keep the right one
-              If(
-                IsNull(rightProvCast),
-                leftProvCast, // If the right tag is null (Left Outer Join), we keep the left one
-                matchedTag // Otherwise, we combine the two (Match found)
-              )
-            )
-
-            // We create an alias for the combined provenance expression to give it
-            //  the correct column name in the output
-            val combinedTag = Alias(joinLogicExpr, provenanceColName)()
-
+          if (!isProcessed && (condition.isDefined || joinType == Cross) && (leftHasProv || rightHasProv)) {
             // We mark the join as processed to avoid infinite loops
             j.setTagValue(PROCESSED_TAG, true)
 
             // We clean the output to ensure having a unique provenance tag
             val cleanedOutput = j.output.filter(_.name != provenanceColName)
 
-            // Create a new join with the combined provenance tag in output
-            j.setTagValue(PROCESSED_TAG, true)
+            if(leftHasProv && rightHasProv) {
+              val leftProvAttr = getProvAttr(left, provenanceColName)
+              val rightProvAttr = getProvAttr(right, provenanceColName)
 
-            // Wrap in a Project to materialize the combined provenance column
-            Project(cleanedOutput :+ combinedTag, j)
+              // We need to cast the provenance attributes to string to be able to concatenate them,
+              // as they can be of different types (e.g., string for one side and array for the other)
+              val leftProvCast = Cast(leftProvAttr, StringType)
+              val rightProvCast = Cast(rightProvAttr, StringType)
+
+              // Operator ⊗ represents the combination of provenance tags from both sides of the join.
+              val matchedTag = Cast(
+                Concat(
+                  Seq(
+                    Literal("("),
+                    leftProvCast,
+                    Literal(" ⊗ "),
+                    rightProvCast,
+                    Literal(")")
+                  )
+                ),
+                StringType
+              )
+
+              // The logic for combining provenance tags in a join is as follows:
+              // - If the left tag is null, it means we have a Right Outer Join and we keep the right tag.
+              // - If the right tag is null, it means we have a Left Outer Join and we keep the left tag.
+              // - If both tags are present, it means we have a Match and we combine the two tags using the ⊗ operator.
+              val joinLogicExpr = If(
+                IsNull(leftProvCast),
+                rightProvCast, // If the left tag is null (Right Outer Join), we keep the right one
+                If(
+                  IsNull(rightProvCast),
+                  leftProvCast, // If the right tag is null (Left Outer Join), we keep the left one
+                  matchedTag // Otherwise, we combine the two (Match found)
+                )
+              )
+
+              // We create an alias for the combined provenance expression to give it
+              //  the correct column name in the output
+              val combinedTag = Alias(joinLogicExpr, provenanceColName)()
+
+              // Wrap in a Project to materialize the combined provenance column
+              Project(cleanedOutput :+ combinedTag, j)
+
+            } else if (leftHasProv) {
+              val leftProvAttr = getProvAttr(left, provenanceColName)
+              val leftProvCast = Cast(leftProvAttr, StringType)
+              val combinedTag = Alias(leftProvCast, provenanceColName)()
+              Project(cleanedOutput :+ combinedTag, j)
+
+            } else {
+              val rightProvAttr = getProvAttr(right, provenanceColName)
+              val rightProvCast = Cast(rightProvAttr, StringType)
+              val combinedTag = Alias(rightProvCast, provenanceColName)()
+              Project(cleanedOutput :+ combinedTag, j)
+
+            }
           } else {
             j
           }
