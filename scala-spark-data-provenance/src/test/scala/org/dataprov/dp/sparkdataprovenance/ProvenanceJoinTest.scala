@@ -296,6 +296,87 @@ class ProvenanceJoinTest extends AnyFunSpec with Matchers with SparkSessionTestW
 
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
     }
+
+    it("should preserve the provenance column if only one side of the join has provenance with views") {
+      val dfLeft = toyDfLeft
+      val dfRight = toyDfRight
+
+      dfLeft.createOrReplaceTempView("left_view")
+      dfRight.createOrReplaceTempView("right_view")
+      addProvenance(spark, "left_view", col("B"))
+
+      val dfWithProvJoin = spark.sql(
+        s"""
+           SELECT l.A, l.B, l.C, r.D
+           FROM left_view l
+           INNER JOIN right_view r ON l.A = r.A
+        """)
+
+      val dfLeftSide = dfLeft.select("A", "B", "C").withColumn("leftProv", col("B").cast("string"))
+      val expected: DataFrame = dfLeftSide.join(dfRight, Seq("A"), "inner")
+        .withColumn(defaultProvenanceColName, col("leftProv"))
+        .drop("leftProv")
+        .select("A", "B", "C", "D", defaultProvenanceColName)
+        .orderBy("A", "B", "C", "D") 
+
+      assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
+    }
+
+    it("should preserve the provenance column and its values when joining with a non-provenance tagged DataFrame") {
+      val dfLeft : DataFrame = Seq(
+        ("A", 1, "x"),
+        ("B", 2, "y"),
+        ("C", 3, "z")
+      ).toDF("A", "B", "C")
+      val dfRight : DataFrame = Seq(
+        ("A"),
+        ("B"),
+      ).toDF("A")
+
+      val dfWithProvRight = addProvenance(dfRight, col("A"))
+      val dfWithProvJoin = dfLeft.join(dfWithProvRight, Seq("A"), "left").select("A", "B", "C")
+
+      val dfRightSide = dfRight.withColumn("rightProv", col("A").cast("string"))
+      val expected: DataFrame = dfLeft.join(dfRightSide, Seq("A"), "left")
+        .withColumn(defaultProvenanceColName, col("rightProv"))
+        .drop("rightProv")
+        .select("A", "B", "C", defaultProvenanceColName)
+        .orderBy("A", "B", "C")
+
+      assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
+    }
+
+    it("should preserve the provenance column and its values when joining with a non-provenance tagged DataFrame with views") {
+      val dfLeft : DataFrame = Seq(
+        ("A", 1, "x"),
+        ("B", 2, "y"),
+        ("C", 3, "z")
+      ).toDF("A", "B", "C")
+      val dfRight : DataFrame = Seq(
+        ("A"),
+        ("B"),
+      ).toDF("A")
+
+      dfLeft.createOrReplaceTempView("left_view")
+      dfRight.createOrReplaceTempView("right_view")
+      addProvenance(spark, "right_view", col("A"))
+
+      val dfWithProvJoin = spark.sql(
+        s"""
+           SELECT l.A, l.B, l.C
+           FROM left_view l
+           LEFT JOIN right_view r ON l.A = r.A
+        """)
+
+      val dfRightSide = dfRight.withColumn("rightProv", col("A").cast("string"))
+      val expected: DataFrame = dfLeft.join(dfRightSide, Seq("A"), "left")
+        .withColumn(defaultProvenanceColName, col("rightProv"))
+        .drop("rightProv")
+        .select("A", "B", "C", defaultProvenanceColName)
+        .orderBy("A", "B", "C") 
+
+      assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
+    }
   }
 }
 
