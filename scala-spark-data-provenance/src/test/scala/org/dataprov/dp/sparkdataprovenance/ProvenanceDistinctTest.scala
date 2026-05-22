@@ -120,6 +120,19 @@ class ProvenanceDistinctTest extends AnyFunSpec with Matchers with SparkSessionT
       ).toDF("A_alias", "C_alias", defaultProvenanceColName)
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvDistinct)
     }
+
+    it("should preserve the provenance column and its values when performing a dropDuplicates") {    
+      val df = toyDf
+      val dfWithProv = addProvenance(df, col("B"))
+      val dfWithProvDistinct = dfWithProv.select("A", "C").dropDuplicates()
+
+      val expected: DataFrame = Seq(
+        ("a", 2.3, "{1 ⊕ 2}"),
+        ("d", 3.4, "2"),
+        ("f", 4.5, "3")
+      ).toDF("A", "C", defaultProvenanceColName)
+      assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvDistinct)
+    }
   }
 }
 
