@@ -126,7 +126,46 @@ class ProvenanceComplexOperationsTest extends AnyFunSpec with Matchers with Spar
         assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
     }
 
-    
+    it("should preserve the provenance column and its values when performing multiple joins with views"){
+      val dfLeft = toyDfLeft
+      val dfRight = toyDfRight
+      val dfThird: DataFrame = Seq(
+        ("a", "m"),
+        ("d", "n"),
+        ("f", "o")
+      ).toDF("A", "E")
+
+      dfLeft.createOrReplaceTempView("left_view_multi_2")
+      dfRight.createOrReplaceTempView("right_view_multi_2")
+      dfThird.createOrReplaceTempView("third_view_multi_2")
+
+      addProvenance(spark, "left_view_multi_2", col("B"))
+      addProvenance(spark, "right_view_multi_2", col("D"))
+      addProvenance(spark, "third_view_multi_2", col("E"))
+
+      val dfWithProvJoin = spark.sql(
+        s"""
+           SELECT l.A, l.B, l.C, r.D, t.E
+           FROM left_view_multi_2 l
+           INNER JOIN right_view_multi_2 r ON l.A = r.A
+           INNER JOIN third_view_multi_2 t ON l.A = t.A
+           ORDER BY l.A, l.B, l.C, r.D, t.E
+         """
+      )
+
+      val expected: DataFrame = dfLeft.alias("l")
+        .join(dfRight.alias("r"), "A")
+        .join(dfThird.alias("t"), "A")
+        .withColumn("leftProv", col("l.B").cast("string"))
+        .withColumn("rightProv", col("r.D").cast("string"))
+        .withColumn("thirdProv", col("t.E").cast("string"))
+        .withColumn(defaultProvenanceColName, concat(lit("(("), col("leftProv"), lit(" ⊗ "), col("rightProv"), lit(") ⊗ "), col("thirdProv"), lit(")")))
+        .drop("leftProv", "rightProv", "thirdProv")
+        .select("A", "B", "C", "D", "E", defaultProvenanceColName)
+        .orderBy("A", "B", "C", "D", "E")
+
+      assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
+    }
   }
 }
 
