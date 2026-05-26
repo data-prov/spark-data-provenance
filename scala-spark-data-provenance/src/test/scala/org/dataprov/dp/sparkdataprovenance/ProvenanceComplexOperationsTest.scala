@@ -223,6 +223,70 @@ class ProvenanceComplexOperationsTest extends AnyFunSpec with Matchers with Spar
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, df4WithProv)
 
     }
+
+    it("should preserve the provenance column and its values when performing joins followed by a union and select distinct with views") {
+      val df: DataFrame = spark.createDataFrame(
+        Seq(
+          ("a", "b", "c"),
+          ("d", "b", "e"),
+          ("f", "g", "e")
+        )
+      ).toDF("A", "B", "C")   
+      df.createOrReplaceTempView("df_with_prov")
+      addProvenance(spark, "df_with_prov", col("B"))
+
+      val dfGlobalWithProv: DataFrame = spark.sql("""
+        SELECT DISTINCT A, C
+        FROM (
+            SELECT t1.A, t1.B, t2.C
+            FROM (
+                SELECT A, B
+                FROM df_with_prov
+            ) AS t1
+            JOIN (
+                SELECT B, C
+                FROM df_with_prov
+            ) AS t2
+            ON t1.B = t2.B
+
+            UNION
+
+            SELECT t1.A, t2.B, t1.C
+            FROM (
+                SELECT A, C
+                FROM df_with_prov
+            ) AS t1
+            JOIN (
+                SELECT B, C
+                FROM df_with_prov
+            ) AS t2
+            ON t1.C = t2.C
+        ) AS combined
+        ORDER BY A, C
+      """)
+      
+
+
+      // The expected dataframe is constructed manually here to ensure the provenance column is 
+      // correctly represented as a string with the expected format,
+      // assuming the provenance column is of string type and cannot be null 
+      val schema = StructType(Seq(
+        StructField("A", StringType, true),
+        StructField("C", StringType, true),
+        StructField(defaultProvenanceColName, StringType, false) 
+      ))
+
+      val expectedRows = Seq(
+        Row("a", "c", "(b ⊗ b)"),
+        Row("a", "e", "(b ⊗ b)"),
+        Row("d", "c", "(b ⊗ b)"),
+        Row("d", "e", "{(b ⊗ g) ⊕ (b ⊗ b)}"),
+        Row("f", "e", "{(g ⊗ g) ⊕ (g ⊗ b)}")
+      )
+
+      val expected: DataFrame = spark.createDataFrame(spark.sparkContext.parallelize(expectedRows), schema)
+      assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfGlobalWithProv)
+    }
   }
 }
 
