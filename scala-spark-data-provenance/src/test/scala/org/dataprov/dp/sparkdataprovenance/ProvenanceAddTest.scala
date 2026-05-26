@@ -26,7 +26,14 @@ class ProvenanceAddTest extends AnyFunSpec with Matchers with SparkSessionTestWr
     assert(dfWithProv.columns.contains(provColName))
 
     // 2. The original data (except provenance) should be preserved
-    spark.conf.set("spark.provenance.enabled", "false")
+
+    // FIX ME: spark-provenance: we may want to provide a utility method that ignores the provenance
+    // column when comparing dataframes, to avoid having to disable provenance for this check
+
+    // The drop operation will create a Project node in the plan, which will be visible to our rule. 
+    // To avoid this, we need to disable provenance for this check
+    // The session is created with the extension in SparkSessionTestWrapper
+    spark.conf.set("spark.provenance.enabled", "false") 
     try {
       assertSmallDataFrameEquality(dfWithProv.drop(provColName), df)
     } finally {
