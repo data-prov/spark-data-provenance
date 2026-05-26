@@ -9,6 +9,10 @@ import org.dataprov.dp.sparkdataprovenance.DataFrameProvenanceTransformations.de
 import org.scalatest.funspec.AnyFunSpec
 import org.scalatest.matchers.should.Matchers
 import com.github.mrpowers.spark.fast.tests.DataFrameComparer
+import org.apache.spark.sql.types.StructField
+import org.apache.spark.sql.Row
+import org.apache.spark.sql.types.StringType
+import org.apache.spark.sql.types.StructType
 
 class ProvenanceComplexOperationsTest extends AnyFunSpec with Matchers with SparkSessionTestWrapper with DataFrameComparer with SparkConfTestUtils {
   import spark.implicits._
@@ -165,6 +169,59 @@ class ProvenanceComplexOperationsTest extends AnyFunSpec with Matchers with Spar
         .orderBy("A", "B", "C", "D", "E")
 
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
+    }
+
+    it("should preserve the provenance column and its values when performing joins followed by a union and select distinct") {
+      val df: DataFrame = spark.createDataFrame(
+        Seq(
+            ("a", "b", "c"),
+            ("d", "b", "e"),
+            ("f", "g", "e")
+        )
+      ).toDF("A", "B", "C")
+      val dfWithProv = addProvenance(df, col("B"))
+
+      val df2WithProv : DataFrame = dfWithProv
+        .select("A", "B")
+        .join(dfWithProv.select("B", "C"), "B")
+        .select("A", "B", "C")
+        .orderBy("A", "B", "C")
+
+      val df3WithProv : DataFrame = dfWithProv
+        .select("A", "C")
+        .join(dfWithProv.select("B", "C"), "C")
+        .select("A", "B", "C")
+        .orderBy("A", "B", "C")
+
+      val df4WithProv : DataFrame = df2WithProv
+        .union(df3WithProv)
+        .distinct()
+        .orderBy("A", "B", "C")
+        .select("A", "C")
+        .distinct()
+        .orderBy("A", "C")
+
+      // The expected dataframe is constructed manually here to ensure the provenance column is 
+      // correctly represented as a string with the expected format,
+      // assuming the provenance column is of string type and cannot be null 
+      val schema = StructType(Seq(
+        StructField("A", StringType, true),
+        StructField("C", StringType, true),
+        StructField(defaultProvenanceColName, StringType, false) 
+      ))
+
+      val expectedRows = Seq(
+        Row("a", "c", "(b ⊗ b)"),
+        Row("a", "e", "(b ⊗ b)"),
+        Row("d", "c", "(b ⊗ b)"),
+        Row("d", "e", "{(b ⊗ g) ⊕ (b ⊗ b)}"),
+        Row("f", "e", "{(g ⊗ g) ⊕ (g ⊗ b)}")
+      )
+
+      val expected: DataFrame = spark.createDataFrame(spark.sparkContext.parallelize(expectedRows), schema)
+
+      assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, df4WithProv)
+
     }
   }
 }
