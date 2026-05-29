@@ -1,5 +1,4 @@
 package org.dataprov.dp.sparkdataprovenance
-
 import org.apache.spark.sql.Column
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.SparkSession
@@ -8,11 +7,18 @@ import org.apache.spark.sql.functions.uuid
 object DataFrameProvenanceTransformations {
   val provenanceEnabledConf = "spark.provenance.enabled"
   val provenanceColConfKey = "spark.provenance.columnName"
+  val provenanceJoinOperatorConfKey = "spark.provenance.operator.join"
+  val provenanceDistinctOperatorConfKey = "spark.provenance.operator.distinct"
+  val provenanceAggregateOperatorConfKey = "spark.provenance.operator.aggregate"
   val defaultProvenanceColName = "_provenance_tag"
 
+  // Returns the name of the provenance column to use, based on the provided SparkSession's configuration
   def provenanceColumnName(spark: SparkSession): String = {
     spark.conf.get(provenanceColConfKey, defaultProvenanceColName)
   }
+
+
+  // The default provenance column is a UUID, which should be unique for each row
   def defaultProvenanceColumn: Column = uuid()
 
   /** Adds the configured provenance column to a DataFrame when not already

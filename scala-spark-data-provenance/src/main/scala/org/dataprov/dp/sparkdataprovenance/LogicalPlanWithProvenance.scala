@@ -2,22 +2,9 @@ package org.dataprov.dp
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.Alias
-import org.apache.spark.sql.catalyst.expressions.And
 import org.apache.spark.sql.catalyst.expressions.Ascending
 import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.catalyst.expressions.Cast
-import org.apache.spark.sql.catalyst.expressions.Concat
-import org.apache.spark.sql.catalyst.expressions.ConcatWs
-import org.apache.spark.sql.catalyst.expressions.GreaterThan
-import org.apache.spark.sql.catalyst.expressions.If
-import org.apache.spark.sql.catalyst.expressions.IsNotNull
-import org.apache.spark.sql.catalyst.expressions.IsNull
-import org.apache.spark.sql.catalyst.expressions.Literal
-import org.apache.spark.sql.catalyst.expressions.Size
 import org.apache.spark.sql.catalyst.expressions.SortOrder
-import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateExpression
-import org.apache.spark.sql.catalyst.expressions.aggregate.CollectSet
-import org.apache.spark.sql.catalyst.expressions.aggregate.Complete
 import org.apache.spark.sql.catalyst.plans.Cross
 import org.apache.spark.sql.catalyst.plans.logical.Aggregate
 import org.apache.spark.sql.catalyst.plans.logical.Deduplicate
@@ -30,12 +17,13 @@ import org.apache.spark.sql.catalyst.plans.logical.Project
 import org.apache.spark.sql.catalyst.plans.logical.Sort
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
-import org.apache.spark.sql.types.StringType
 import org.dataprov.dp.sparkdataprovenance.DataFrameProvenanceTransformations._
-import org.apache.spark.sql.catalyst.expressions.Coalesce
 
-case class LogicalPlanWithProvenance(spark: SparkSession)
-    extends Rule[LogicalPlan] {
+case class LogicalPlanWithProvenance(
+  spark: SparkSession,
+  provenanceBuilder: ProvenanceBuilder = DisplayStringProvenanceBuilder
+) extends Rule[LogicalPlan] {
+  
   // Check if a plan already has provenance propagated
   def hasProv(plan: LogicalPlan, provenanceColName: String): Boolean =
     LogicalPlanIntegrity.canGetOutputAttrs(plan) && plan.output.exists(
@@ -73,32 +61,28 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
             expr.references.subsetOf(child.outputSet)
           )
 
-          // We check if the child has the provenance column and if the project itself already has it
-          // We also check if the project list already contains an expression creating the provenance column
+          // We check if the child has the provenance column.
+          // If yes, we force provenance to be the last projected column.
           val childHasProv = hasProv(child, provenanceColName)
-          val projectHasProv = hasProv(p, provenanceColName)
 
-          // Check if the projectList already contains an expression that creates the provenance column
-          val projectListHasProvExpr = projectList.exists {
+          // Keep provenance expressions (if any) separate so we can place exactly one at the end.
+          val (provExprs, nonProvExprs) = validProjectList.partition {
             case Alias(_, name)  => name == provenanceColName
             case attr: Attribute => attr.name == provenanceColName
             case _               => false
           }
 
-          // Only add the provenance column if the child has it, the project doesn't,
-          // and the project list isn't already creating it (to avoid duplicates)
-          if (childHasProv && !projectHasProv && !projectListHasProvExpr) {
-            val provAttr = getProvAttr(child, provenanceColName)
-            val newProjectList = projectList :+ provAttr
-            p.copy(projectList = newProjectList, child = child)
-          }
+          if (childHasProv) {
+            val provExpr = provExprs.lastOption.getOrElse(getProvAttr(child, provenanceColName))
+            val reorderedProjectList = nonProvExprs :+ provExpr
 
-          if (childHasProv && !projectHasProv && !projectListHasProvExpr) {
-            val provAttr = getProvAttr(child, provenanceColName)
-            p.copy(projectList = validProjectList :+ provAttr, child = child)
+            if (reorderedProjectList != projectList) {
+              p.copy(projectList = reorderedProjectList, child = child)
+            } else {
+              p
+            }
           } else if (validProjectList.size != projectList.size) {
-            // If we cleaned up dead references but the provenance column is already present,
-            // we need to update the project list to remove the dead references
+            // If we cleaned dead references, update the projection even without provenance.
             p.copy(projectList = validProjectList, child = child)
           } else {
             p
@@ -126,38 +110,11 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
             if(leftHasProv && rightHasProv) {
               val leftProvAttr = getProvAttr(left, provenanceColName)
               val rightProvAttr = getProvAttr(right, provenanceColName)
-
-              // We need to cast the provenance attributes to string to be able to concatenate them,
-              // as they can be of different types (e.g., string for one side and array for the other)
-              val leftProvCast = Cast(leftProvAttr, StringType)
-              val rightProvCast = Cast(rightProvAttr, StringType)
-
-              // Operator ⊗ represents the combination of provenance tags from both sides of the join.
-              val matchedTag = Cast(
-                If(
-                  And(IsNotNull(leftProvAttr), IsNotNull(rightProvAttr)),
-                  Concat(
-                    Seq(
-                      Literal("("),
-                      leftProvCast,
-                      Literal(" ⊗ "),
-                      rightProvCast,
-                      Literal(")")
-                    )
-                  ),
-                  Cast(Literal(null), StringType)
-                ),
-                StringType
+              
+              val joinLogicExpr = provenanceBuilder.join(
+                leftProvAttr,
+                rightProvAttr
               )
-
-              // Coalesce.nullable is true only when ALL children are nullable.
-              // leftProvCast may be non-nullable (e.g. when the source column is IntegerType,false).
-              // Wrapping it in If(IsNull(...), null, ...) forces nullable=true at the type level
-              // while preserving the original runtime value (the IsNull branch is never taken).
-              val leftProvNullable = If(IsNull(leftProvAttr), Literal(null, StringType), leftProvCast)
-              val rightProvNullable = If(IsNull(rightProvAttr), Literal(null, StringType), rightProvCast)
-              val joinLogicExpr = Coalesce(Seq(matchedTag, leftProvNullable, rightProvNullable))
-
 
               // We create an alias for the combined provenance expression to give it
               //  the correct column name in the output
@@ -168,15 +125,19 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
 
             } else if (leftHasProv) {
               val leftProvAttr = getProvAttr(left, provenanceColName)
-              val leftProvCast = Cast(leftProvAttr, StringType)
-              val combinedTag = Alias(leftProvCast, provenanceColName)()
+              val combinedTag = Alias(
+                provenanceBuilder.single(leftProvAttr),
+                provenanceColName
+              )()
               Project(cleanedOutput :+ combinedTag, j)
 
             } else {
               val rightProvAttr = getProvAttr(right, provenanceColName)
-              val combinedTag = Alias(rightProvAttr, provenanceColName)()
+              val combinedTag = Alias(
+                provenanceBuilder.single(rightProvAttr),
+                provenanceColName
+              )()
               Project(cleanedOutput :+ combinedTag, j)
-
             }
           } else {
             j
@@ -184,21 +145,9 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
 
         // We look for 'Filter' nodes, which represent WHERE statements
         case f @ Filter(condition, child) =>
-          // We check if the child has the provenance column and if the filter itself already has it
-          val childHasProv = hasProv(child, provenanceColName)
-          val filterHasProv = hasProv(f, provenanceColName)
-
-          // If the child has the provenance column but the filter does not,
-          // we need to add it to the filter condition.
-          if (childHasProv && !filterHasProv) {
-            val provAttr = getProvAttr(child, provenanceColName)
-            // We add a condition to ensure that the provenance column is not null,
-            // as a null value would indicate that the row was filtered out and should not be propagated
-            val newCondition = And(condition, IsNotNull(provAttr))
-            Filter(newCondition, child)
-          } else {
-            f
-          }
+          // Filtering does not require provenance-specific rewrites.
+          // Keep user predicate unchanged, including rows with null provenance.
+          f
 
         // We look for 'Sort' nodes, which represent ORDER BY statements
         case s @ Sort(order, global, child, hint) =>
@@ -219,19 +168,20 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
           }
 
         // We look for 'Aggregate' nodes, which represent GROUP BY statements
+        // TODO: we may want to support a different operator for GROUP BY vs DISTINCT
         case a @ Aggregate(groupingExprs, aggregateExprs, child, hint) =>
           // We check if the child has the provenance column and if the aggregate itself already has it
           val childHasProv = hasProv(child, provenanceColName)
           val aggregateHasProv = hasProv(a, provenanceColName)
 
-          // If the child has the provenance column but the aggregate does not
-          // we need to add it to the aggregate expressions.
+          // If the child has the provenance column but the aggregate itself does not,
+          // add a provenance aggregation expression automatically.
+          // If aggregate already has provenance (e.g., from DISTINCT rewrite), keep it as-is.
           if (childHasProv && !aggregateHasProv) {
             val provAttr = getProvAttr(child, provenanceColName)
-            val provAttrCast = Cast(provAttr, StringType)
 
             val newAggregateExprs = aggregateExprs :+ Alias(
-              Cast(CollectSet(provAttrCast), StringType),
+              provenanceBuilder.aggregate(provAttr),
               provenanceColName
             )()
 
@@ -249,28 +199,16 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
           if (childHasProv) {
 
             val childAttr = getProvAttr(child, provenanceColName)
-            val childCast = Cast(childAttr, StringType)
 
             // The columns of grouping must be all the columns of the child except the provenance column.
             val groupingCols = child.output.filter(_.name != provenanceColName)
 
-            val collectSetExpr = AggregateExpression(
-              CollectSet(childCast),
-              Complete,
-              isDistinct = false
-            )
-            val joinedArray = ConcatWs(Seq(Literal(" ⊕ "), collectSetExpr))
-
-            // We add braces around the combined provenance tags if there are multiple tags
-            // to indicate that it's a combination of multiple rows (e.g., in case of duplicates)
-            val withBraces =
-              Concat(Seq(Literal("{"), joinedArray, Literal("}")))
-            val conditionalFormat = If(
-              GreaterThan(Size(collectSetExpr), Literal(1)),
-              withBraces,
-              joinedArray
-            )
-            val combinedTag = Alias(conditionalFormat, provenanceColName)()
+            val combinedTag = Alias(
+              provenanceBuilder.distinct(
+                childAttr
+              ),
+              provenanceColName
+            )()
 
             // We replace the Distinct node with an Aggregate node with
             // the same grouping columns and the new tag as aggregate expression
@@ -286,33 +224,25 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
         // We look for 'Deduplicate' nodes, which represent Distinct statements with specified keys
         // (e.g., distinct or dropDuplicates in DataFrame API)
         case d @ Deduplicate(keys, child) =>
+          // Keep only keys that are still available in the child output to avoid
+          // analyzer failures when projection changed expression IDs upstream.
+          val keysPresentInChild = keys.filter(k => child.outputSet.contains(k))
+
           // We ensure the child is tagged
           val childHasProv = hasProv(child, provenanceColName)
 
           if (childHasProv) {
             val provAttr = getProvAttr(child, provenanceColName)
-            val provAttrCast = Cast(provAttr, StringType)
 
             // The columns of grouping must be all the columns of the child except the provenance column.
-            val validKeys = keys.filter(_.name != provenanceColName)
+            val validKeys = keysPresentInChild.filter(_.name != provenanceColName)
 
-            val collectSetExpr = AggregateExpression(
-              CollectSet(provAttrCast),
-              Complete,
-              isDistinct = false
-            )
-            val joinedArray = ConcatWs(Seq(Literal(" ⊕ "), collectSetExpr))
-
-            // We add braces around the combined provenance tags if there are multiple tags
-            // to indicate that it's a combination of multiple rows (e.g., in case of duplicates
-            val withBraces =
-              Concat(Seq(Literal("{"), joinedArray, Literal("}")))
-            val conditionalFormat = If(
-              GreaterThan(Size(collectSetExpr), Literal(1)),
-              withBraces,
-              joinedArray
-            )
-            val combinedTag = Alias(conditionalFormat, provenanceColName)()
+            val combinedTag = Alias(
+              provenanceBuilder.distinct(
+                provAttr
+              ),
+              provenanceColName
+            )()
 
             // We replace the Deduplicate node with an Aggregate node with
             // the same grouping keys and the new tag as aggregate expression
@@ -320,7 +250,13 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
             Aggregate(validKeys, newAggregateExprs, child)
 
           } else {
-            d
+            // Even without provenance on the child, sanitize stale keys that are no
+            // longer present after projection rewrites.
+            if (keysPresentInChild.size != keys.size) {
+              Deduplicate(keysPresentInChild, child)
+            } else {
+              d
+            }
           }
 
       }
