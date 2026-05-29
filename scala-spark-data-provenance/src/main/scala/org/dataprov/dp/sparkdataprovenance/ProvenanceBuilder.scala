@@ -19,13 +19,13 @@ import org.apache.spark.sql.catalyst.expressions.Size
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateExpression
 import org.apache.spark.sql.catalyst.expressions.aggregate.CollectSet
 import org.apache.spark.sql.catalyst.expressions.aggregate.Complete
+import org.apache.spark.sql.catalyst.expressions.aggregate.Max
 import org.apache.spark.sql.catalyst.expressions.aggregate.MinBy
 import org.apache.spark.sql.types.ArrayType
-import org.apache.spark.sql.types.DataType
-import org.apache.spark.sql.types.StringType
 import org.apache.spark.sql.types.BooleanType
+import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.types.IntegerType
-import org.apache.spark.sql.catalyst.expressions.aggregate.Max
+import org.apache.spark.sql.types.StringType
 
 trait ProvenanceOutput {
   def outputType: DataType
