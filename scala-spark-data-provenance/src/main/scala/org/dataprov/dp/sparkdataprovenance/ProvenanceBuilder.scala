@@ -47,11 +47,11 @@ trait AggregateProvenanceOperation {
   def aggregate(attr: Attribute): Expression
 }
 
-// Encapsulates how provenance values are represented and combined for joins, distinct 
-// and group by operations. This trait allows users to customize the representation of 
+// Encapsulates how provenance values are represented and combined for joins, distinct
+// and group by operations. This trait allows users to customize the representation of
 // provenance information, e.g. by using structured types instead of strings
 trait ProvenanceBuilder
-  extends ProvenanceOutput
+    extends ProvenanceOutput
     with SingleProvenanceOperation
     with JoinProvenanceOperation
     with DistinctProvenanceOperation
@@ -74,7 +74,7 @@ object ProvenanceBuilder {
       aggregateFn: Attribute => Expression
   ): ProvenanceBuilder = new ProvenanceBuilder {
     override val outputType: DataType = outputTypeFn
-    override def single(attr: Attribute): Expression = 
+    override def single(attr: Attribute): Expression =
       singleFn(attr)
     override def join(left: Attribute, right: Attribute): Expression =
       joinFn(left, right)
@@ -83,8 +83,6 @@ object ProvenanceBuilder {
     override def aggregate(attr: Attribute): Expression =
       aggregateFn(attr)
   }
-
-
 
   // Build from a base builder and override only the capabilities you need.
   // This keeps composition flexible without creating many one-off helper methods.
@@ -109,11 +107,11 @@ object DisplayStringProvenanceBuilder extends ProvenanceBuilder {
   def distinctOperator: String = " ⊕ "
   def aggregateOperator: String = " ⊕ "
   override val outputType: DataType = StringType
-  // For a single input row, the provenance is represented as 
+  // For a single input row, the provenance is represented as
   // the string representation of the provenance attribute
   override def single(attr: Attribute): Expression = Cast(attr, StringType)
-  
-  // For JOIN, we combine left and right provenance with the join operator 
+
+  // For JOIN, we combine left and right provenance with the join operator
   // in between, and wrap with parentheses
   override def join(
       left: Attribute,
@@ -146,10 +144,10 @@ object DisplayStringProvenanceBuilder extends ProvenanceBuilder {
 
     Coalesce(Seq(matchedTag, leftNullable, rightNullable))
   }
-  // For DISTINCT / DEDUPLICATE, we combine the provenance of all rows in the group 
+  // For DISTINCT / DEDUPLICATE, we combine the provenance of all rows in the group
   // with the aggregate operator in between.
   override def distinct(
-    attr: Attribute
+      attr: Attribute
   ): Expression = {
     val collectSetExpr = AggregateExpression(
       CollectSet(Cast(attr, StringType)),
@@ -169,7 +167,7 @@ object DisplayStringProvenanceBuilder extends ProvenanceBuilder {
   // similar to DISTINCT semantics
   // TODO: we may want to support a different operator for GROUP BY vs DISTINCT
   override def aggregate(
-    attr: Attribute
+      attr: Attribute
   ): Expression = {
     val collectSetExpr = AggregateExpression(
       CollectSet(Cast(attr, StringType)),
@@ -206,12 +204,12 @@ object WhyProvenanceBuilder extends ProvenanceBuilder {
         )
     }
   }
-  // For a single input row, the provenance is represented as a single-element 
+  // For a single input row, the provenance is represented as a single-element
   // array containing the provenance token for that row
   override def single(attr: Attribute): Expression = {
     toArray(attr)
   }
-  // For JOIN, we take the union of left and right provenance tokens, 
+  // For JOIN, we take the union of left and right provenance tokens,
   // which corresponds to the set of all input rows that contributed to each output row
   override def join(
       left: Attribute,
@@ -234,11 +232,11 @@ object WhyProvenanceBuilder extends ProvenanceBuilder {
       isDistinct = false
     )
   }
-  // For GROUP BY, we take the set of all provenance tokens for rows in the group, 
+  // For GROUP BY, we take the set of all provenance tokens for rows in the group,
   // similar to DISTINCT semantics
   override def aggregate(
       attr: Attribute
-    ): Expression = {
+  ): Expression = {
     val collectSetExpr = AggregateExpression(
       CollectSet(toArray(attr)),
       Complete,
@@ -248,9 +246,9 @@ object WhyProvenanceBuilder extends ProvenanceBuilder {
   }
 }
 
-// Boolean builder: provenance is represented as boolean expressions 
+// Boolean builder: provenance is represented as boolean expressions
 // that track the presence or absence of input rows.
-// This is useful when consumers want to perform further symbolic reasoning 
+// This is useful when consumers want to perform further symbolic reasoning
 // over provenance information, e.g. for debugging
 object BooleanProvenanceBuilder extends ProvenanceBuilder {
   override val outputType: DataType = BooleanType

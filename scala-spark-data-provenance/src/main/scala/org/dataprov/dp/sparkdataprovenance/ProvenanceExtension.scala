@@ -14,11 +14,9 @@ object ProvenanceExtension {
 }
 
 // This class acts as the registration hook
-class ProvenanceExtension( 
-  val provenanceBuilder: ProvenanceBuilder
+class ProvenanceExtension(
+    val provenanceBuilder: ProvenanceBuilder
 ) extends (SparkSessionExtensions => Unit) {
-
-
 
   // Keep a zero-argument constructor so Spark can instantiate the extension via reflection.
   def this() = this(DisplayStringProvenanceBuilder)

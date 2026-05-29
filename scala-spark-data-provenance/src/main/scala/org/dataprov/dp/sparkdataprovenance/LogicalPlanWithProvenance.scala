@@ -20,10 +20,10 @@ import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.dataprov.dp.sparkdataprovenance.DataFrameProvenanceTransformations._
 
 case class LogicalPlanWithProvenance(
-  spark: SparkSession,
-  provenanceBuilder: ProvenanceBuilder = DisplayStringProvenanceBuilder
+    spark: SparkSession,
+    provenanceBuilder: ProvenanceBuilder = DisplayStringProvenanceBuilder
 ) extends Rule[LogicalPlan] {
-  
+
   // Check if a plan already has provenance propagated
   def hasProv(plan: LogicalPlan, provenanceColName: String): Boolean =
     LogicalPlanIntegrity.canGetOutputAttrs(plan) && plan.output.exists(
@@ -73,7 +73,9 @@ case class LogicalPlanWithProvenance(
           }
 
           if (childHasProv) {
-            val provExpr = provExprs.lastOption.getOrElse(getProvAttr(child, provenanceColName))
+            val provExpr = provExprs.lastOption.getOrElse(
+              getProvAttr(child, provenanceColName)
+            )
             val reorderedProjectList = nonProvExprs :+ provExpr
 
             if (reorderedProjectList != projectList) {
@@ -100,17 +102,19 @@ case class LogicalPlanWithProvenance(
           // to combine the provenance tags from both sides.
           val isProcessed = j.getTagValue(PROCESSED_TAG).contains(true)
 
-          if (!isProcessed && (condition.isDefined || joinType == Cross) && (leftHasProv || rightHasProv)) {
+          if (
+            !isProcessed && (condition.isDefined || joinType == Cross) && (leftHasProv || rightHasProv)
+          ) {
             // We mark the join as processed to avoid infinite loops
             j.setTagValue(PROCESSED_TAG, true)
 
             // We clean the output to ensure having a unique provenance tag
             val cleanedOutput = j.output.filter(_.name != provenanceColName)
 
-            if(leftHasProv && rightHasProv) {
+            if (leftHasProv && rightHasProv) {
               val leftProvAttr = getProvAttr(left, provenanceColName)
               val rightProvAttr = getProvAttr(right, provenanceColName)
-              
+
               val joinLogicExpr = provenanceBuilder.join(
                 leftProvAttr,
                 rightProvAttr
@@ -235,7 +239,8 @@ case class LogicalPlanWithProvenance(
             val provAttr = getProvAttr(child, provenanceColName)
 
             // The columns of grouping must be all the columns of the child except the provenance column.
-            val validKeys = keysPresentInChild.filter(_.name != provenanceColName)
+            val validKeys =
+              keysPresentInChild.filter(_.name != provenanceColName)
 
             val combinedTag = Alias(
               provenanceBuilder.distinct(

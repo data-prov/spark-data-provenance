@@ -17,7 +17,6 @@ object DataFrameProvenanceTransformations {
     spark.conf.get(provenanceColConfKey, defaultProvenanceColName)
   }
 
-
   // The default provenance column is a UUID, which should be unique for each row
   def defaultProvenanceColumn: Column = uuid()
 
