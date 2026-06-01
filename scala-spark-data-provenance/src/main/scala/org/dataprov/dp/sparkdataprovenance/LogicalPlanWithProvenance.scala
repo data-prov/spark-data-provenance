@@ -6,6 +6,7 @@ import org.apache.spark.sql.catalyst.expressions.And
 import org.apache.spark.sql.catalyst.expressions.Ascending
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.expressions.Cast
+import org.apache.spark.sql.catalyst.expressions.Coalesce
 import org.apache.spark.sql.catalyst.expressions.Concat
 import org.apache.spark.sql.catalyst.expressions.ConcatWs
 import org.apache.spark.sql.catalyst.expressions.GreaterThan
@@ -32,7 +33,6 @@ import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.types.StringType
 import org.dataprov.dp.sparkdataprovenance.DataFrameProvenanceTransformations._
-import org.apache.spark.sql.catalyst.expressions.Coalesce
 
 case class LogicalPlanWithProvenance(spark: SparkSession)
     extends Rule[LogicalPlan] {
@@ -116,14 +116,16 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
           // to combine the provenance tags from both sides.
           val isProcessed = j.getTagValue(PROCESSED_TAG).contains(true)
 
-          if (!isProcessed && (condition.isDefined || joinType == Cross) && (leftHasProv || rightHasProv)) {
+          if (
+            !isProcessed && (condition.isDefined || joinType == Cross) && (leftHasProv || rightHasProv)
+          ) {
             // We mark the join as processed to avoid infinite loops
             j.setTagValue(PROCESSED_TAG, true)
 
             // We clean the output to ensure having a unique provenance tag
             val cleanedOutput = j.output.filter(_.name != provenanceColName)
 
-            if(leftHasProv && rightHasProv) {
+            if (leftHasProv && rightHasProv) {
               val leftProvAttr = getProvAttr(left, provenanceColName)
               val rightProvAttr = getProvAttr(right, provenanceColName)
 
@@ -154,10 +156,18 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
               // leftProvCast may be non-nullable (e.g. when the source column is IntegerType,false).
               // Wrapping it in If(IsNull(...), null, ...) forces nullable=true at the type level
               // while preserving the original runtime value (the IsNull branch is never taken).
-              val leftProvNullable = If(IsNull(leftProvAttr), Literal(null, StringType), leftProvCast)
-              val rightProvNullable = If(IsNull(rightProvAttr), Literal(null, StringType), rightProvCast)
-              val joinLogicExpr = Coalesce(Seq(matchedTag, leftProvNullable, rightProvNullable))
-
+              val leftProvNullable = If(
+                IsNull(leftProvAttr),
+                Literal(null, StringType),
+                leftProvCast
+              )
+              val rightProvNullable = If(
+                IsNull(rightProvAttr),
+                Literal(null, StringType),
+                rightProvCast
+              )
+              val joinLogicExpr =
+                Coalesce(Seq(matchedTag, leftProvNullable, rightProvNullable))
 
               // We create an alias for the combined provenance expression to give it
               //  the correct column name in the output
