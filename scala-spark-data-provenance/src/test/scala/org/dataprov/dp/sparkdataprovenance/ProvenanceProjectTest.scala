@@ -1,4 +1,4 @@
-package org.dataprov.dp
+package org.dataprov.dp.sparkdataprovenance
 
 import com.github.mrpowers.spark.fast.tests.DataFrameComparer
 import org.scalatest.funspec.AnyFunSpec
@@ -6,7 +6,7 @@ import org.scalatest.matchers.should.Matchers
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions.{col, lit}
 
-import org.dataprov.dp.sparkdataprovenance.DataFrameProvenanceTransformations._
+import org.dataprov.dp.sparkdataprovenance.ProvenanceApi._
 
 class ProvenanceProjectTest extends AnyFunSpec with Matchers with SparkSessionTestWrapper with DataFrameComparer with ProvenanceModeTestUtils {
   import spark.implicits._

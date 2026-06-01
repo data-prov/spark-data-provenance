@@ -1,9 +1,9 @@
-package org.dataprov.dp
+package org.dataprov.dp.sparkdataprovenance
 
 import org.apache.spark.sql.SparkSessionExtensions
 
 // This class acts as the registration hook
-class ProvenanceExtension extends (SparkSessionExtensions => Unit) {
+class SparkProvenanceExtension extends (SparkSessionExtensions => Unit) {
 
   override def apply(extensions: SparkSessionExtensions): Unit = {
     // Inject provenance rule after analysis so projections created by

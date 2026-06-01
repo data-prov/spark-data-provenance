@@ -1,10 +1,9 @@
-package org.dataprov.dp
+package org.dataprov.dp.sparkdataprovenance
 
-import org.dataprov.dp.sparkdataprovenance.DataFrameProvenanceTransformations._
+import org.dataprov.dp.sparkdataprovenance.ProvenanceApi._
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
-import org.dataprov.dp.SparkSessionTestWrapper
-import org.dataprov.dp.sparkdataprovenance.DataFrameProvenanceTransformations.defaultProvenanceColName
+import org.dataprov.dp.sparkdataprovenance.SparkSessionTestWrapper
 import org.scalatest.funspec.AnyFunSpec
 import org.scalatest.matchers.should.Matchers
 import com.github.mrpowers.spark.fast.tests.DataFrameComparer

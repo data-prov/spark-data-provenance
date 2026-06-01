@@ -4,8 +4,9 @@ import org.apache.spark.sql.Column
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions.uuid
+import org.dataprov.dp.sparkdataprovenance.SparkConfUtils._
 
-object DataFrameProvenanceTransformations {
+object ProvenanceApi {
   val provenanceEnabledSparkConf = "spark.provenance.enabled"
   val provenanceColNameSparkConf = "spark.provenance.columnName"
   val defaultProvenanceColName = "_provenance_tag"
@@ -103,10 +104,34 @@ object DataFrameProvenanceTransformations {
 
   implicit class DataFrameWithProvenance(df: DataFrame) {
     def addProvenanceColumn: DataFrame =
-      DataFrameProvenanceTransformations.addProvenance(df)
+      ProvenanceApi.addProvenance(df)
     def addProvenanceColumn(col: Column): DataFrame =
-      DataFrameProvenanceTransformations.addProvenance(df, col)
+      ProvenanceApi.addProvenance(df, col)
     def removeProvenanceColumn: DataFrame =
-      DataFrameProvenanceTransformations.removeProvenance(df)
+      ProvenanceApi.removeProvenance(df)
   }
+
+  def withProvenanceEnabled[T](spark: SparkSession)(testBody: => T): T =
+    withSparkConf(spark, provenanceEnabledSparkConf, "true")(testBody)
+
+  def withProvenanceEnabled[T](spark: SparkSession, provenanceColName: String)(
+      testBody: => T
+  ): T =
+    withProvenanceEnabled(spark)(
+      withSparkConf(spark, provenanceColNameSparkConf, provenanceColName)(
+        testBody
+      )
+    )
+
+  def withProvenanceDisabled[T](spark: SparkSession)(testBody: => T): T =
+    withSparkConf(spark, provenanceEnabledSparkConf, "false")(testBody)
+
+  def withProvenanceDisabled[T](spark: SparkSession, provenanceColName: String)(
+      testBody: => T
+  ): T =
+    withProvenanceDisabled(spark)(
+      withSparkConf(spark, provenanceColNameSparkConf, provenanceColName)(
+        testBody
+      )
+    )
 }
