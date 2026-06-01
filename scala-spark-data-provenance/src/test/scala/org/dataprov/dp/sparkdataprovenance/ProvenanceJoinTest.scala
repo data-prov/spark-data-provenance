@@ -8,9 +8,8 @@ import org.apache.spark.sql.functions.{col, concat, lit, when}
 
 import org.dataprov.dp.sparkdataprovenance.DataFrameProvenanceTransformations._
 
-class ProvenanceJoinTest extends AnyFunSpec with Matchers with SparkSessionTestWrapper with DataFrameComparer with SparkConfTestUtils {
+class ProvenanceJoinTest extends AnyFunSpec with Matchers with SparkSessionTestWrapper with DataFrameComparer with ProvenanceModeTestUtils {
   import spark.implicits._
-  spark.conf.set("spark.provenance.enabled", "true")
 
   private def toyDfLeft: DataFrame = Seq(
     ("a", 1, 2.3),
@@ -35,7 +34,7 @@ class ProvenanceJoinTest extends AnyFunSpec with Matchers with SparkSessionTestW
   }
 
   describe("Joining columns from DataFrames/views with provenance") {
-    it("should preserve the provenance column and its values when performing an inner join") {      
+    itWithProvenanceEnabled("should preserve the provenance column and its values when performing an inner join") {      
       val dfLeft = toyDfLeft
       val dfRight = toyDfRight
 
@@ -55,7 +54,7 @@ class ProvenanceJoinTest extends AnyFunSpec with Matchers with SparkSessionTestW
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
     }
 
-    it("should preserve the provenance column and its values when performing an inner join with views") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when performing an inner join with views") {
       val dfLeft = toyDfLeft
       val dfRight = toyDfRight
 
@@ -83,7 +82,7 @@ class ProvenanceJoinTest extends AnyFunSpec with Matchers with SparkSessionTestW
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
     }
 
-    it("should preserve the provenance column and its values when performing a left join") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when performing a left join") {
       val dfLeft = toyDfLeft
       val dfRight = toyDfRight
 
@@ -103,7 +102,7 @@ class ProvenanceJoinTest extends AnyFunSpec with Matchers with SparkSessionTestW
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
     }
 
-    it("should preserve the provenance column and its values when performing a left join with views") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when performing a left join with views") {
       val dfLeft = toyDfLeft
       val dfRight = toyDfRight
 
@@ -131,7 +130,7 @@ class ProvenanceJoinTest extends AnyFunSpec with Matchers with SparkSessionTestW
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
     }
 
-    it("should preserve the provenance column and its values when performing a right join") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when performing a right join") {
       val dfLeft = toyDfLeft
       val dfRight = toyDfRight
 
@@ -151,7 +150,7 @@ class ProvenanceJoinTest extends AnyFunSpec with Matchers with SparkSessionTestW
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
     }
 
-    it("should preserve the provenance column and its values when performing a right join with views") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when performing a right join with views") {
       val dfLeft = toyDfLeft
       val dfRight = toyDfRight
 
@@ -179,7 +178,7 @@ class ProvenanceJoinTest extends AnyFunSpec with Matchers with SparkSessionTestW
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
     }
 
-    it("should preserve the provenance column and its values when performing a full outer join") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when performing a full outer join") {
       val dfLeft = toyDfLeft
       val dfRight = toyDfRight
 
@@ -201,7 +200,7 @@ class ProvenanceJoinTest extends AnyFunSpec with Matchers with SparkSessionTestW
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
     }
 
-    it("should preserve the provenance column and its values when performing a full outer join with views") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when performing a full outer join with views") {
       val dfLeft = toyDfLeft
       val dfRight = toyDfRight
 
@@ -232,7 +231,7 @@ class ProvenanceJoinTest extends AnyFunSpec with Matchers with SparkSessionTestW
     }
     // TODO : test semi and anti joins once we decide on the expected provenance semantics for those operations
     
-    it("should preserve the provenance column and its values when performing a cross join") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when performing a cross join") {
       val dfLeft = toyDfLeft
       val dfRight = toyDfRight
 
@@ -252,7 +251,7 @@ class ProvenanceJoinTest extends AnyFunSpec with Matchers with SparkSessionTestW
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
     }
 
-    it("should preserve the provenance column and its values when performing a cross join with views") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when performing a cross join with views") {
       val dfLeft = toyDfLeft
       val dfRight = toyDfRight
 
@@ -280,7 +279,7 @@ class ProvenanceJoinTest extends AnyFunSpec with Matchers with SparkSessionTestW
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
     }
 
-    it("should preserve the provenance column if only one side of the join has provenance") {
+    itWithProvenanceEnabled("should preserve the provenance column if only one side of the join has provenance") {
       val dfLeft = toyDfLeft
       val dfRight = toyDfRight
 
@@ -297,7 +296,7 @@ class ProvenanceJoinTest extends AnyFunSpec with Matchers with SparkSessionTestW
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
     }
 
-    it("should preserve the provenance column if only one side of the join has provenance with views") {
+    itWithProvenanceEnabled("should preserve the provenance column if only one side of the join has provenance with views") {
       val dfLeft = toyDfLeft
       val dfRight = toyDfRight
 
@@ -322,7 +321,7 @@ class ProvenanceJoinTest extends AnyFunSpec with Matchers with SparkSessionTestW
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
     }
 
-    it("should preserve the provenance column and its values when joining with a non-provenance tagged DataFrame") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when joining with a non-provenance tagged DataFrame") {
       val dfLeft = toyDfLeft
       val dfRight = toyDfRight
 
@@ -339,7 +338,7 @@ class ProvenanceJoinTest extends AnyFunSpec with Matchers with SparkSessionTestW
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
     }
 
-    it("should preserve the provenance column and its values when joining with a non-provenance tagged DataFrame with views") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when joining with a non-provenance tagged DataFrame with views") {
       val dfLeft = toyDfLeft
       val dfRight = toyDfRight
 

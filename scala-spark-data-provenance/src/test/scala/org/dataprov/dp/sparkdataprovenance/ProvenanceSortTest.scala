@@ -8,9 +8,8 @@ import org.apache.spark.sql.functions.{col, when}
 
 import org.dataprov.dp.sparkdataprovenance.DataFrameProvenanceTransformations._
 
-class ProvenanceSortTest extends AnyFunSpec with Matchers with SparkSessionTestWrapper with DataFrameComparer with SparkConfTestUtils {
+class ProvenanceSortTest extends AnyFunSpec with Matchers with SparkSessionTestWrapper with DataFrameComparer with ProvenanceModeTestUtils {
   import spark.implicits._
-  spark.conf.set("spark.provenance.enabled", "true")
 
   private def toyDf: DataFrame = Seq(
     ("a", 1, 2.3),
@@ -31,7 +30,7 @@ class ProvenanceSortTest extends AnyFunSpec with Matchers with SparkSessionTestW
   }
 
   describe("Sorting rows from a DataFrame/view with provenance") {
-    it("should preserve the provenance column and its values when sorting") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when sorting") {
       val df = toyDf
 
       val dfWithProvSorted = addProvenance(df, col("B")).orderBy(col("B")).select("A", "B")
@@ -40,7 +39,7 @@ class ProvenanceSortTest extends AnyFunSpec with Matchers with SparkSessionTestW
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvSorted)
     }
 
-    it("should preserve the provenance column and its values when sorting with views") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when sorting with views") {
       val df = toyDf
       df.createOrReplaceTempView(viewName)
       addProvenance(spark, viewName, col("B"))
@@ -51,7 +50,7 @@ class ProvenanceSortTest extends AnyFunSpec with Matchers with SparkSessionTestW
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvSorted)
     }
 
-    it("should preserve the provenance column and its values when sorting with complex expressions") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when sorting with complex expressions") {
       val df = toyDf
 
       val dfWithProvSorted = addProvenance(df, col("B")).orderBy(col("B") + col("C")).select("A", "B")
@@ -60,7 +59,7 @@ class ProvenanceSortTest extends AnyFunSpec with Matchers with SparkSessionTestW
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvSorted)
     }
 
-    it("should preserve the provenance column and its values when sorting with complex expressions with views") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when sorting with complex expressions with views") {
       val df = toyDf
       df.createOrReplaceTempView(viewName)
       addProvenance(spark, viewName, col("B"))
@@ -71,7 +70,7 @@ class ProvenanceSortTest extends AnyFunSpec with Matchers with SparkSessionTestW
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvSorted)
     }
 
-    it("should preserve the provenance column and its values when sorting with ascending/descending order") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when sorting with ascending/descending order") {
       val df = toyDf
 
       val dfWithProvSorted = addProvenance(df, col("B")).orderBy(col("B").desc).select("A", "B")
@@ -80,7 +79,7 @@ class ProvenanceSortTest extends AnyFunSpec with Matchers with SparkSessionTestW
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvSorted)
     }
 
-    it("should preserve the provenance column and its values when sorting with ascending/descending order with views") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when sorting with ascending/descending order with views") {
       val df = toyDf
       df.createOrReplaceTempView(viewName)
       addProvenance(spark, viewName, col("B"))
@@ -91,7 +90,7 @@ class ProvenanceSortTest extends AnyFunSpec with Matchers with SparkSessionTestW
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvSorted)
     }
 
-    it("should preserve the provenance column and its values when sorting with null values") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when sorting with null values") {
       val df = toyDf.withColumn("D", col("B").cast("string"))
         .withColumn("D", when(col("B") === 1, null).otherwise(col("D")))
 
@@ -101,7 +100,7 @@ class ProvenanceSortTest extends AnyFunSpec with Matchers with SparkSessionTestW
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvSorted)
     }
 
-    it("should preserve the provenance column and its values when sorting with null values with views") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when sorting with null values with views") {
       val df = toyDf.withColumn("D", col("B").cast("string"))
         .withColumn("D", when(col("B") === 1, null).otherwise(col("D")))
 
@@ -114,7 +113,7 @@ class ProvenanceSortTest extends AnyFunSpec with Matchers with SparkSessionTestW
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvSorted)
     }
 
-    it("should preserve the provenance column and its values when sorting with multiple columns") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when sorting with multiple columns") {
       val df = toyDf
 
       val dfWithProvSorted = addProvenance(df, col("B")).orderBy(col("B"), col("C").desc).select("A", "B", "C")
@@ -123,7 +122,7 @@ class ProvenanceSortTest extends AnyFunSpec with Matchers with SparkSessionTestW
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvSorted)
     }
 
-    it("should preserve the provenance column and its values when sorting with multiple columns with views") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when sorting with multiple columns with views") {
       val df = toyDf
       df.createOrReplaceTempView(viewName)
       addProvenance(spark, viewName, col("B"))
@@ -134,7 +133,7 @@ class ProvenanceSortTest extends AnyFunSpec with Matchers with SparkSessionTestW
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvSorted)
     }
 
-    it("should preserve the provenance column and its values when sorting with multiple columns with null values") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when sorting with multiple columns with null values") {
       val df = toyDf.withColumn("D", col("B").cast("string"))
         .withColumn("D", when(col("B") === 1, null).otherwise(col("D")))
 
@@ -144,7 +143,7 @@ class ProvenanceSortTest extends AnyFunSpec with Matchers with SparkSessionTestW
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvSorted)
     }
 
-    it("should preserve the provenance column and its values when sorting with multiple columns with null values with views") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when sorting with multiple columns with null values with views") {
       val df = toyDf.withColumn("D", col("B").cast("string"))
         .withColumn("D", when(col("B") === 1, null).otherwise(col("D")))
 
@@ -157,7 +156,7 @@ class ProvenanceSortTest extends AnyFunSpec with Matchers with SparkSessionTestW
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvSorted)
     }
 
-    it("should preserve the provenance column and its values when sorting with expressions on multiple columns") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when sorting with expressions on multiple columns") {
       val df = toyDf
 
       val dfWithProvSorted = addProvenance(df, col("B")).orderBy(col("B") + col("C"), col("C").desc).select("A", "B", "C")
@@ -166,7 +165,7 @@ class ProvenanceSortTest extends AnyFunSpec with Matchers with SparkSessionTestW
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvSorted)
     }
 
-    it("should preserve the provenance column and its values when sorting with expressions on multiple columns with views") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when sorting with expressions on multiple columns with views") {
       val df = toyDf
       df.createOrReplaceTempView(viewName)
       addProvenance(spark, viewName, col("B"))

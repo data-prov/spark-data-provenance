@@ -8,7 +8,7 @@ trait SparkSessionTestWrapper {
 
   lazy val spark: SparkSession = {
     Logger.getLogger("org").setLevel(Level.OFF)
-    SparkSession.builder().master("local").appName("spark session").withExtensions(ext => new ProvenanceExtension()(ext)).getOrCreate()
+    SparkSession.builder().master("local").appName("spark session").withExtensions(new ProvenanceExtension()(_)).getOrCreate()
   }
 
 }

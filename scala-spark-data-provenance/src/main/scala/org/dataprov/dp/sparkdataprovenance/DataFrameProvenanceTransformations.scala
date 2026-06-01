@@ -6,12 +6,15 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions.uuid
 
 object DataFrameProvenanceTransformations {
-  val provenanceEnabledConf = "spark.provenance.enabled"
-  val provenanceColConfKey = "spark.provenance.columnName"
+  val provenanceEnabledSparkConf = "spark.provenance.enabled"
+  val provenanceColNameSparkConf = "spark.provenance.columnName"
   val defaultProvenanceColName = "_provenance_tag"
 
+  def isProvenanceEnabled(spark: SparkSession): Boolean = {
+    spark.conf.get(provenanceEnabledSparkConf, "true").toBoolean
+  }
   def provenanceColumnName(spark: SparkSession): String = {
-    spark.conf.get(provenanceColConfKey, defaultProvenanceColName)
+    spark.conf.get(provenanceColNameSparkConf, defaultProvenanceColName)
   }
   def defaultProvenanceColumn: Column = uuid()
 

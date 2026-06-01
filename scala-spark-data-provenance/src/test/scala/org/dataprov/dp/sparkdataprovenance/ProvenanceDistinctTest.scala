@@ -8,9 +8,8 @@ import org.apache.spark.sql.functions.{col, lit, when}
 
 import org.dataprov.dp.sparkdataprovenance.DataFrameProvenanceTransformations._
 
-class ProvenanceDistinctTest extends AnyFunSpec with Matchers with SparkSessionTestWrapper with DataFrameComparer with SparkConfTestUtils {
+class ProvenanceDistinctTest extends AnyFunSpec with Matchers with SparkSessionTestWrapper with DataFrameComparer with ProvenanceModeTestUtils {
   import spark.implicits._
-  spark.conf.set("spark.provenance.enabled", "true")
 
   private def toyDf: DataFrame = Seq(
     ("a", 1, 2.3),
@@ -37,7 +36,7 @@ class ProvenanceDistinctTest extends AnyFunSpec with Matchers with SparkSessionT
   }
 
   describe("Deduplicating rows from a DataFrame/view with provenance") {
-    it("should preserve the provenance column and its values when performing a distinct") {    
+    itWithProvenanceEnabled("should preserve the provenance column and its values when performing a distinct") {    
       val df = toyDf
       val dfWithProv = addProvenance(df, col("B"))
       val dfWithProvDistinct = dfWithProv.select("A", "C").distinct()
@@ -50,7 +49,7 @@ class ProvenanceDistinctTest extends AnyFunSpec with Matchers with SparkSessionT
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvDistinct)
     }
 
-    it("should preserve the provenance column and its values when performing a distinct with views") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when performing a distinct with views") {
       val df = toyDf
       df.createOrReplaceTempView("toy_view")
       addProvenance(spark, "toy_view", col("B"))
@@ -65,7 +64,7 @@ class ProvenanceDistinctTest extends AnyFunSpec with Matchers with SparkSessionT
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvDistinct)
     }
 
-    it("should preserve the provenance column and its values when performing a distinct with explicit provenance selection") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when performing a distinct with explicit provenance selection") {
       val df = toyDf
       val dfWithProv = addProvenance(df, col("B"))
       val dfWithProvDistinct = dfWithProv.select("A", "C", defaultProvenanceColName).distinct()
@@ -78,7 +77,7 @@ class ProvenanceDistinctTest extends AnyFunSpec with Matchers with SparkSessionT
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvDistinct)
     }
 
-    it("should preserve the provenance column and its values when performing a distinct with explicit provenance selection with views") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when performing a distinct with explicit provenance selection with views") {
       val df = toyDf
       df.createOrReplaceTempView("toy_view")
       addProvenance(spark, "toy_view", col("B"))
@@ -93,7 +92,7 @@ class ProvenanceDistinctTest extends AnyFunSpec with Matchers with SparkSessionT
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvDistinct)
     }
 
-    it("should preserve provenance when aliasing columns and performing a distinct") {
+    itWithProvenanceEnabled("should preserve provenance when aliasing columns and performing a distinct") {
       val df = toyDf
       val dfWithProv = addProvenance(df, col("B"))
       val dfWithProvDistinct = dfWithProv.select(col("A").as("A_alias"), col("C").as("C_alias"), col(defaultProvenanceColName)).distinct()
@@ -106,7 +105,7 @@ class ProvenanceDistinctTest extends AnyFunSpec with Matchers with SparkSessionT
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvDistinct)
     }
 
-    it("should preserve provenance when aliasing columns and performing a distinct with views") {
+    itWithProvenanceEnabled("should preserve provenance when aliasing columns and performing a distinct with views") {
       val df = toyDf
       df.createOrReplaceTempView("toy_view")
       addProvenance(spark, "toy_view", col("B"))
@@ -121,7 +120,7 @@ class ProvenanceDistinctTest extends AnyFunSpec with Matchers with SparkSessionT
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvDistinct)
     }
 
-    it("should preserve the provenance column and its values when performing a dropDuplicates") {    
+    itWithProvenanceEnabled("should preserve the provenance column and its values when performing a dropDuplicates") {    
       val df = toyDf
       val dfWithProv = addProvenance(df, col("B"))
       val dfWithProvDistinct = dfWithProv.select("A", "C").dropDuplicates()

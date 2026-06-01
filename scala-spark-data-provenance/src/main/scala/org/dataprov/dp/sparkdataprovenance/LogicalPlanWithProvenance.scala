@@ -54,11 +54,9 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
 
   override def apply(plan: LogicalPlan): LogicalPlan = {
     // Get Spark provenance configurations
-    val provenanceEnabled: Boolean = spark.sessionState.conf
-      .getConfString(provenanceEnabledConf, "false") == "true"
     val provenanceColName: String = provenanceColumnName(spark)
 
-    if (!provenanceEnabled) {
+    if (!isProvenanceEnabled(spark)) {
       plan // If the feature is not enabled, return the plan unchanged
     } else {
       // transformUp traverses the tree from the bottom leaves to the top root
