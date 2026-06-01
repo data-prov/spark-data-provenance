@@ -28,7 +28,7 @@ import org.apache.spark.sql.types.IntegerType
 import org.apache.spark.sql.types.StringType
 
 trait ProvenanceOutput {
-  def outputType: DataType
+  def provType: DataType
 }
 
 trait SingleProvenanceOperation {
@@ -57,23 +57,25 @@ trait ProvenanceBuilder
     with DistinctProvenanceOperation
     with AggregateProvenanceOperation
 
+// Helper case class to specify overrides when building a new ProvenanceBuilder from a base.
 object ProvenanceBuilder {
   final case class Overrides(
-      outputTypeFrom: Option[ProvenanceOutput] = None,
+      provTypeFrom: Option[ProvenanceOutput] = None,
       singleFrom: Option[SingleProvenanceOperation] = None,
       joinFrom: Option[JoinProvenanceOperation] = None,
       distinctFrom: Option[DistinctProvenanceOperation] = None,
       aggregateFrom: Option[AggregateProvenanceOperation] = None
   )
 
+  // Build a ProvenanceBuilder from individual functions for each capability.
   def compose(
-      outputTypeFn: DataType,
+      provTypeFn: DataType,
       singleFn: Attribute => Expression,
       joinFn: (Attribute, Attribute) => Expression,
       distinctFn: Attribute => Expression,
       aggregateFn: Attribute => Expression
   ): ProvenanceBuilder = new ProvenanceBuilder {
-    override val outputType: DataType = outputTypeFn
+    override val provType: DataType = provTypeFn
     override def single(attr: Attribute): Expression =
       singleFn(attr)
     override def join(left: Attribute, right: Attribute): Expression =
@@ -91,7 +93,7 @@ object ProvenanceBuilder {
       overrides: Overrides = Overrides()
   ): ProvenanceBuilder =
     compose(
-      outputTypeFn = overrides.outputTypeFrom.getOrElse(base).outputType,
+      provTypeFn = overrides.provTypeFrom.getOrElse(base).provType,
       singleFn = overrides.singleFrom.getOrElse(base).single,
       joinFn = overrides.joinFrom.getOrElse(base).join,
       distinctFn = overrides.distinctFrom.getOrElse(base).distinct,
@@ -106,7 +108,7 @@ object DisplayStringProvenanceBuilder extends ProvenanceBuilder {
   def joinOperator: String = " ⊗ "
   def distinctOperator: String = " ⊕ "
   def aggregateOperator: String = " ⊕ "
-  override val outputType: DataType = StringType
+  override val provType: DataType = StringType
   // For a single input row, the provenance is represented as
   // the string representation of the provenance attribute
   override def single(attr: Attribute): Expression = Cast(attr, StringType)
@@ -191,7 +193,7 @@ object DisplayStringProvenanceBuilder extends ProvenanceBuilder {
 object WhyProvenanceBuilder extends ProvenanceBuilder {
   private val arrayStringType = ArrayType(StringType, containsNull = true)
 
-  override val outputType: DataType = arrayStringType
+  override val provType: DataType = arrayStringType
 
   private def toArray(attr: Attribute): Expression = {
     attr.dataType match {
@@ -251,7 +253,7 @@ object WhyProvenanceBuilder extends ProvenanceBuilder {
 // This is useful when consumers want to perform further symbolic reasoning
 // over provenance information, e.g. for debugging
 object BooleanProvenanceBuilder extends ProvenanceBuilder {
-  override val outputType: DataType = BooleanType
+  override val provType: DataType = BooleanType
 
   private def toBool(attr: Attribute): Expression =
     Coalesce(Seq(Cast(attr, BooleanType), Literal(false)))

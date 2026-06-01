@@ -7,9 +7,6 @@ import org.apache.spark.sql.functions.uuid
 object DataFrameProvenanceTransformations {
   val provenanceEnabledConf = "spark.provenance.enabled"
   val provenanceColConfKey = "spark.provenance.columnName"
-  val provenanceJoinOperatorConfKey = "spark.provenance.operator.join"
-  val provenanceDistinctOperatorConfKey = "spark.provenance.operator.distinct"
-  val provenanceAggregateOperatorConfKey = "spark.provenance.operator.aggregate"
   val defaultProvenanceColName = "_provenance_tag"
 
   // Returns the name of the provenance column to use, based on the provided SparkSession's configuration
