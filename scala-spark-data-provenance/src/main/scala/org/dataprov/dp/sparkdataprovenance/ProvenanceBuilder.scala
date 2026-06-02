@@ -165,7 +165,7 @@ object DisplayStringProvenanceBuilder extends ProvenanceBuilder {
       joinedArray
     )
   }
-  // For GROUP BY, we take the set of all provenance tokens for rows in the group,
+  // For GROUP BY, we take the set of all provenance tags for rows in the group,
   // similar to DISTINCT semantics
   // TODO: we may want to support a different operator for GROUP BY vs DISTINCT
   override def aggregate(
@@ -184,67 +184,6 @@ object DisplayStringProvenanceBuilder extends ProvenanceBuilder {
       withBraces,
       joinedArray
     )
-  }
-}
-
-// Why-provenance builder: explicit alias over witness-set semantics.
-// The provenance is represented as array<string>.
-// This is useful when consumers prefer structured provenance tokens over display strings.
-object WhyProvenanceBuilder extends ProvenanceBuilder {
-  private val arrayStringType = ArrayType(StringType, containsNull = true)
-
-  override val provType: DataType = arrayStringType
-
-  private def toArray(attr: Attribute): Expression = {
-    attr.dataType match {
-      case ArrayType(StringType, _) => attr
-      case _ =>
-        If(
-          IsNull(attr),
-          Literal.create(null, arrayStringType),
-          CreateArray(Seq(Cast(attr, StringType)))
-        )
-    }
-  }
-  // For a single input row, the provenance is represented as a single-element
-  // array containing the provenance token for that row
-  override def single(attr: Attribute): Expression = {
-    toArray(attr)
-  }
-  // For JOIN, we take the union of left and right provenance tokens,
-  // which corresponds to the set of all input rows that contributed to each output row
-  override def join(
-      left: Attribute,
-      right: Attribute
-  ): Expression = {
-    val leftArray = toArray(left)
-    val rightArray = toArray(right)
-    val merged = ArrayDistinct(Concat(Seq(leftArray, rightArray)))
-    Coalesce(Seq(merged, leftArray, rightArray))
-  }
-  // For DISTINCT / DEDUPLICATE, we take the set of all provenance tokens for rows in the group,
-  // which corresponds to the set of all input rows that contributed to each output row in the group
-  override def distinct(
-      attr: Attribute
-  ): Expression = {
-    val arrayProv = toArray(attr)
-    AggregateExpression(
-      MinBy(arrayProv, Size(arrayProv)),
-      Complete,
-      isDistinct = false
-    )
-  }
-  // For GROUP BY, we take the set of all provenance tokens for rows in the group,
-  // similar to DISTINCT semantics
-  override def aggregate(
-      attr: Attribute
-  ): Expression = {
-    val collectSetExpr = AggregateExpression(
-      CollectSet(toArray(attr)),
-      Complete,
-      isDistinct = false
-    )
-    ArrayDistinct(Flatten(collectSetExpr))
   }
 }
 
@@ -284,3 +223,111 @@ object BooleanProvenanceBuilder extends ProvenanceBuilder {
 
   override def aggregate(attr: Attribute): Expression = anyTrue(attr)
 }
+
+// Semi Why-provenance builder: explicit alias over witness-set semantics.
+// The provenance is represented as array<string>.
+// This is useful when consumers prefer structured provenance tags over display strings.
+// The exact result will be preserved for single, join and aggregate operations, but distinct 
+//will not distinguish between multiple rows contributing to the same output row,
+object SemiWhyProvenanceBuilder extends ProvenanceBuilder {
+  private val arrayStringType = ArrayType(StringType, containsNull = true)
+
+  override val provType: DataType = arrayStringType
+
+  private def toArray(attr: Attribute): Expression = {
+    attr.dataType match {
+      case ArrayType(StringType, _) => attr
+      case _ =>
+        If(
+          IsNull(attr),
+          Literal.create(null, arrayStringType),
+          CreateArray(Seq(Cast(attr, StringType)))
+        )
+    }
+  }
+  // For a single input row, the provenance is represented as a single-element
+  // array containing the provenance tag for that row
+  override def single(attr: Attribute): Expression = {
+    toArray(attr)
+  }
+  // For JOIN, we take the union of left and right provenance tags,
+  // which corresponds to the set of all input rows that contributed to each output row
+  override def join(
+      left: Attribute,
+      right: Attribute
+  ): Expression = {
+    val leftArray = toArray(left)
+    val rightArray = toArray(right)
+    val merged = ArrayDistinct(Concat(Seq(leftArray, rightArray)))
+    Coalesce(Seq(merged, leftArray, rightArray))
+  }
+  // For DISTINCT / DEDUPLICATE, we take the set of all provenance tags for rows in the group,
+  // which corresponds to the set of all input rows that contributed to each output row in the group
+  override def distinct(
+      attr: Attribute
+  ): Expression = {
+    val arrayProv = toArray(attr)
+    AggregateExpression(
+      MinBy(arrayProv, Size(arrayProv)),
+      Complete,
+      isDistinct = false
+    )
+  }
+  // For GROUP BY, we take the set of all provenance tags for rows in the group,
+  // similar to DISTINCT semantics
+  override def aggregate(
+      attr: Attribute
+  ): Expression = {
+    val collectSetExpr = AggregateExpression(
+      CollectSet(toArray(attr)),
+      Complete,
+      isDistinct = false
+    )
+    ArrayDistinct(Flatten(collectSetExpr))
+  }
+}
+
+// 
+object FullWhyProvenanceBuilder extends ProvenanceBuilder {
+  override val provType: DataType = SemiWhyProvenanceBuilder.provType
+
+  override def single(attr: Attribute): Expression =
+    SemiWhyProvenanceBuilder.single(attr)
+
+  override def join(
+      left: Attribute,
+      right: Attribute
+  ): Expression =
+    SemiWhyProvenanceBuilder.join(left, right)
+
+  override def distinct(attr: Attribute): Expression =
+    SemiWhyProvenanceBuilder.aggregate(attr)
+
+  override def aggregate(attr: Attribute): Expression =
+    SemiWhyProvenanceBuilder.aggregate(attr)
+}
+
+
+// The aggregate and distinct will not distinguish between multiple rows contributing to the same output row, 
+// but the join will still combine left and right provenance tags. This is a more lightweight representation
+// that may be sufficient for some use cases.
+object LightWhyProvenanceBuilder extends ProvenanceBuilder {
+  override val provType: DataType = SemiWhyProvenanceBuilder.provType
+
+  override def single(attr: Attribute): Expression =
+    SemiWhyProvenanceBuilder.single(attr)
+
+  override def join(
+      left: Attribute,
+      right: Attribute
+  ): Expression =
+    SemiWhyProvenanceBuilder.join(left, right)
+
+  override def distinct(attr: Attribute): Expression =
+    SemiWhyProvenanceBuilder.distinct(attr)
+
+  override def aggregate(attr: Attribute): Expression =
+    SemiWhyProvenanceBuilder.distinct(attr)
+}
+
+
