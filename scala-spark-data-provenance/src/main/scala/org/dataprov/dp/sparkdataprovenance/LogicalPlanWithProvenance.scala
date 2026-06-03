@@ -1,57 +1,52 @@
-package org.dataprov.dp
+package org.dataprov.dp.sparkdataprovenance
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.Alias
+import org.apache.spark.sql.catalyst.expressions.And
+import org.apache.spark.sql.catalyst.expressions.Ascending
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.expressions.Cast
+import org.apache.spark.sql.catalyst.expressions.Coalesce
 import org.apache.spark.sql.catalyst.expressions.Concat
 import org.apache.spark.sql.catalyst.expressions.ConcatWs
+import org.apache.spark.sql.catalyst.expressions.GreaterThan
 import org.apache.spark.sql.catalyst.expressions.If
+import org.apache.spark.sql.catalyst.expressions.IsNotNull
 import org.apache.spark.sql.catalyst.expressions.IsNull
 import org.apache.spark.sql.catalyst.expressions.Literal
-import org.apache.spark.sql.catalyst.expressions.MonotonicallyIncreasingID
+import org.apache.spark.sql.catalyst.expressions.Size
+import org.apache.spark.sql.catalyst.expressions.SortOrder
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateExpression
 import org.apache.spark.sql.catalyst.expressions.aggregate.CollectSet
 import org.apache.spark.sql.catalyst.expressions.aggregate.Complete
+import org.apache.spark.sql.catalyst.plans.Cross
 import org.apache.spark.sql.catalyst.plans.logical.Aggregate
+import org.apache.spark.sql.catalyst.plans.logical.Deduplicate
 import org.apache.spark.sql.catalyst.plans.logical.Distinct
 import org.apache.spark.sql.catalyst.plans.logical.Filter
 import org.apache.spark.sql.catalyst.plans.logical.Join
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
+import org.apache.spark.sql.catalyst.plans.logical.LogicalPlanIntegrity
 import org.apache.spark.sql.catalyst.plans.logical.Project
 import org.apache.spark.sql.catalyst.plans.logical.Sort
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.types.StringType
-import org.dataprov.dp.sparkdataprovenance.DataFrameProvenanceTransformations._
+import org.dataprov.dp.sparkdataprovenance.ProvenanceApi._
 
 case class LogicalPlanWithProvenance(spark: SparkSession)
     extends Rule[LogicalPlan] {
-
-  def ensureProv(plan: LogicalPlan, provenanceColName: String): LogicalPlan = {
-    if (hasProv(plan, provenanceColName)) {
-      plan
-    } else {
-      val newTag = Alias(
-        Concat(
-          Seq(
-            Literal(s"${plan.nodeName}_"),
-            Cast(MonotonicallyIncreasingID(), StringType)
-          )
-        ),
-        provenanceColName
-      )()
-      Project(plan.output :+ newTag, plan)
-    }
-  }
-
   // Check if a plan already has provenance propagated
   def hasProv(plan: LogicalPlan, provenanceColName: String): Boolean =
-    plan.output.exists(_.name == provenanceColName)
+    LogicalPlanIntegrity.canGetOutputAttrs(plan) && plan.output.exists(
+      _.name == provenanceColName
+    )
 
-  // Find the provenance attribute in a plan
+  // Find and get the provenance attribute in a plan
   def getProvAttr(plan: LogicalPlan, provenanceColName: String): Attribute =
-    plan.output.find(_.name == provenanceColName).get
+    if (LogicalPlanIntegrity.canGetOutputAttrs(plan))
+      plan.output.find(_.name == provenanceColName).get
+    else throw new IllegalArgumentException("Plan is not resolved")
 
   // Custom tag to mark that a join has been processed to avoid infinite loops
   val PROCESSED_TAG: TreeNodeTag[Boolean] =
@@ -59,11 +54,9 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
 
   override def apply(plan: LogicalPlan): LogicalPlan = {
     // Get Spark provenance configurations
-    val provenanceEnabled: Boolean = spark.sessionState.conf
-      .getConfString(provenanceEnabledConf, "false") == "true"
     val provenanceColName: String = provenanceColumnName(spark)
 
-    if (!provenanceEnabled) {
+    if (!isProvenanceEnabled(spark)) {
       plan // If the feature is not enabled, return the plan unchanged
     } else {
       // transformUp traverses the tree from the bottom leaves to the top root
@@ -71,156 +64,272 @@ case class LogicalPlanWithProvenance(spark: SparkSession)
 
         // We look for 'Project' nodes, which represent SELECT statements
         case p @ Project(projectList, child) =>
-          // CRITICAL: Catalyst runs rules repeatedly until the plan stops changing.
-          // We must check if we already added our column to avoid an infinite loop!
-          if (hasProv(p, provenanceColName)) {
-            p // Return the node unchanged
+          // We clean the project list from any expression that references columns
+          // not in the child output, as they would create dead references
+          // and prevent the correct propagation of the provenance column
+          val validProjectList = projectList.filter(expr =>
+            expr.references.subsetOf(child.outputSet)
+          )
+
+          // We check if the child has the provenance column and if the project itself already has it
+          // We also check if the project list already contains an expression creating the provenance column
+          val childHasProv = hasProv(child, provenanceColName)
+          val projectHasProv = hasProv(p, provenanceColName)
+
+          // Check if the projectList already contains an expression that creates the provenance column
+          val projectListHasProvExpr = projectList.exists {
+            case Alias(_, name)  => name == provenanceColName
+            case attr: Attribute => attr.name == provenanceColName
+            case _               => false
+          }
+
+          // Only add the provenance column if the child has it, the project doesn't,
+          // and the project list isn't already creating it (to avoid duplicates)
+          if (childHasProv && !projectHasProv && !projectListHasProvExpr) {
+            val provAttr = getProvAttr(child, provenanceColName)
+            val newProjectList = projectList :+ provAttr
+            p.copy(projectList = newProjectList, child = child)
+          }
+
+          if (childHasProv && !projectHasProv && !projectListHasProvExpr) {
+            val provAttr = getProvAttr(child, provenanceColName)
+            p.copy(projectList = validProjectList :+ provAttr, child = child)
+          } else if (validProjectList.size != projectList.size) {
+            // If we cleaned up dead references but the provenance column is already present,
+            // we need to update the project list to remove the dead references
+            p.copy(projectList = validProjectList, child = child)
           } else {
-            // We ensure the child is tagged with provenance
-            val taggedChild = ensureProv(child, provenanceColName)
-
-            // Create a new literal string column named '_provenance_tag_select'
-            // val provenanceCol = Alias(Concat(Seq(Cast(MonotonicallyIncreasingID(), StringType))), PROV_COL)()
-            val tagExpr = getProvAttr(taggedChild, provenanceColName)
-
-            // Return a new Project node with our column appended to the list
-            // Project(projectList :+ provenanceCol, child)
-            p.copy(projectList = projectList :+ tagExpr, child = taggedChild)
+            p
           }
 
         // We look for 'Join' nodes, which represent JOIN statements
         case j @ Join(left, right, joinType, condition, hint) =>
-          // CRITICAL: Catalyst runs rules repeatedly until the plan stops changing.
-          // We must check if we already added our column to avoid an infinite loop!
-          // Do not use 'hasProv' here because the join itself does not have the provenance column,
-          // it is added in the parent 'Project' node. We use a custom tag to mark that we already processed this join.
-          if (j.getTagValue(PROCESSED_TAG).contains(true)) {
-            j // Return the node unchanged
-          } else {
-            // We ensure both sides of the join are tagged with provenance
-            val taggedLeft = ensureProv(left, provenanceColName)
-            val taggedRight = ensureProv(right, provenanceColName)
+          // We check if the left and right children have the provenance column
+          // and if the join itself already has it
+          val leftHasProv = hasProv(left, provenanceColName)
+          val rightHasProv = hasProv(right, provenanceColName)
 
-            // We recover the provenance tags of the children
-            val leftTag = getProvAttr(taggedLeft, provenanceColName)
-            val rightTag = getProvAttr(taggedRight, provenanceColName)
+          // We use a custom tag to check if this join has already been processed
+          // to avoid infinite loops when we add a new Project node on top of the join
+          // to combine the provenance tags from both sides.
+          val isProcessed = j.getTagValue(PROCESSED_TAG).contains(true)
 
-            // We create a new tag by combining the tags of the children
-            val matchedTag = Concat(
-              Seq(Literal("("), leftTag, Literal(" ⊗ "), rightTag, Literal(")"))
-            )
-
-            val joinLogicExpr = If(
-              IsNull(leftTag),
-              rightTag, // If the left tag is null (Right Outer Join), we keep the right one
-              If(
-                IsNull(rightTag),
-                leftTag, // If the right tag is null (Left Outer Join), we keep the left one
-                matchedTag // Otherwise, we combine the two (Match found)
-              )
-            )
-            val combinedTag = Alias(joinLogicExpr, provenanceColName)()
-
-            // The join is changed with tagged children
-            val newJoin = j.copy(left = taggedLeft, right = taggedRight)
-
+          if (
+            !isProcessed && (condition.isDefined || joinType == Cross) && (leftHasProv || rightHasProv)
+          ) {
             // We mark the join as processed to avoid infinite loops
-            newJoin.setTagValue(PROCESSED_TAG, true)
+            j.setTagValue(PROCESSED_TAG, true)
 
             // We clean the output to ensure having a unique provenance tag
-            val cleanedOutput =
-              newJoin.output.filter(_.name != provenanceColName)
+            val cleanedOutput = j.output.filter(_.name != provenanceColName)
 
-            // The result is a new 'Project' tagged
-            Project(cleanedOutput :+ combinedTag, newJoin)
-          }
+            if (leftHasProv && rightHasProv) {
+              val leftProvAttr = getProvAttr(left, provenanceColName)
+              val rightProvAttr = getProvAttr(right, provenanceColName)
 
-        // We look for 'Aggregate' nodes, which represent Aggregate statements
-        case a @ Aggregate(_, aggExprs, child, hint) =>
-          if (hasProv(a, provenanceColName)) {
-            a // Return the node unchanged
+              // We need to cast the provenance attributes to string to be able to concatenate them,
+              // as they can be of different types (e.g., string for one side and array for the other)
+              val leftProvCast = Cast(leftProvAttr, StringType)
+              val rightProvCast = Cast(rightProvAttr, StringType)
+
+              // Operator ⊗ represents the combination of provenance tags from both sides of the join.
+              val matchedTag = Cast(
+                If(
+                  And(IsNotNull(leftProvAttr), IsNotNull(rightProvAttr)),
+                  Concat(
+                    Seq(
+                      Literal("("),
+                      leftProvCast,
+                      Literal(" ⊗ "),
+                      rightProvCast,
+                      Literal(")")
+                    )
+                  ),
+                  Cast(Literal(null), StringType)
+                ),
+                StringType
+              )
+
+              // Coalesce.nullable is true only when ALL children are nullable.
+              // leftProvCast may be non-nullable (e.g. when the source column is IntegerType,false).
+              // Wrapping it in If(IsNull(...), null, ...) forces nullable=true at the type level
+              // while preserving the original runtime value (the IsNull branch is never taken).
+              val leftProvNullable = If(
+                IsNull(leftProvAttr),
+                Literal(null, StringType),
+                leftProvCast
+              )
+              val rightProvNullable = If(
+                IsNull(rightProvAttr),
+                Literal(null, StringType),
+                rightProvCast
+              )
+              val joinLogicExpr =
+                Coalesce(Seq(matchedTag, leftProvNullable, rightProvNullable))
+
+              // We create an alias for the combined provenance expression to give it
+              //  the correct column name in the output
+              val combinedTag = Alias(joinLogicExpr, provenanceColName)()
+
+              // Wrap in a Project to materialize the combined provenance column
+              Project(cleanedOutput :+ combinedTag, j)
+
+            } else if (leftHasProv) {
+              val leftProvAttr = getProvAttr(left, provenanceColName)
+              val leftProvCast = Cast(leftProvAttr, StringType)
+              val combinedTag = Alias(leftProvCast, provenanceColName)()
+              Project(cleanedOutput :+ combinedTag, j)
+
+            } else {
+              val rightProvAttr = getProvAttr(right, provenanceColName)
+              val combinedTag = Alias(rightProvAttr, provenanceColName)()
+              Project(cleanedOutput :+ combinedTag, j)
+
+            }
           } else {
-            // We ensure the child is tagged
-            val taggedChild = ensureProv(child, provenanceColName)
-            val childTag = getProvAttr(taggedChild, provenanceColName)
-
-            // We recover the aggregate expression
-            val collectSet = AggregateExpression(
-              CollectSet(childTag),
-              Complete,
-              isDistinct = false
-            )
-
-            // We create a new tag by combining the tags of the children
-            val combinedTag = Alias(
-              Concat(
-                Seq(
-                  Literal("{"),
-                  ConcatWs(Seq(Literal(" ⊕ "), collectSet)),
-                  Literal("}")
-                )
-              ),
-              provenanceColName
-            )()
-            // The aggregation is modified with the new tag
-            a.copy(
-              child = taggedChild,
-              aggregateExpressions = aggExprs :+ combinedTag
-            )
+            j
           }
 
         // We look for 'Filter' nodes, which represent WHERE statements
         case f @ Filter(condition, child) =>
-          if (hasProv(f, provenanceColName)) {
-            f
+          // We check if the child has the provenance column and if the filter itself already has it
+          val childHasProv = hasProv(child, provenanceColName)
+          val filterHasProv = hasProv(f, provenanceColName)
+
+          // If the child has the provenance column but the filter does not,
+          // we need to add it to the filter condition.
+          if (childHasProv && !filterHasProv) {
+            val provAttr = getProvAttr(child, provenanceColName)
+            // We add a condition to ensure that the provenance column is not null,
+            // as a null value would indicate that the row was filtered out and should not be propagated
+            val newCondition = And(condition, IsNotNull(provAttr))
+            Filter(newCondition, child)
           } else {
-            f.copy(child = ensureProv(child, provenanceColName))
+            f
           }
 
         // We look for 'Sort' nodes, which represent ORDER BY statements
         case s @ Sort(order, global, child, hint) =>
-          if (hasProv(s, provenanceColName)) {
-            s
+          // We check if the child has the provenance column and if the sort itself already has it
+          val childHasProv = hasProv(child, provenanceColName)
+          val sortHasProv = hasProv(s, provenanceColName)
+
+          // If the child has the provenance column but the sort does not,
+          // we need to add it to the sort order.
+          if (childHasProv && !sortHasProv) {
+            val provAttr = getProvAttr(child, provenanceColName)
+            // We add the provenance column at the end of the sort order to ensure a deterministic
+            // order of rows with the same values in the other sorted columns
+            val newOrder = order :+ SortOrder(provAttr, Ascending)
+            Sort(newOrder, global, child, hint)
           } else {
-            s.copy(child = ensureProv(child, provenanceColName))
+            s
           }
 
-        // We look for 'Distinct' nodes, which represent Distinct statements
-        // We treat Distinct as a special case of Aggregate with all columns as
-        // grouping columns and the same tag logic as Aggregate
-        case Distinct(child) =>
+        // We look for 'Aggregate' nodes, which represent GROUP BY statements
+        case a @ Aggregate(groupingExprs, aggregateExprs, child, hint) =>
+          // We check if the child has the provenance column and if the aggregate itself already has it
+          val childHasProv = hasProv(child, provenanceColName)
+          val aggregateHasProv = hasProv(a, provenanceColName)
+
+          // If the child has the provenance column but the aggregate does not
+          // we need to add it to the aggregate expressions.
+          if (childHasProv && !aggregateHasProv) {
+            val provAttr = getProvAttr(child, provenanceColName)
+            val provAttrCast = Cast(provAttr, StringType)
+
+            val newAggregateExprs = aggregateExprs :+ Alias(
+              Cast(CollectSet(provAttrCast), StringType),
+              provenanceColName
+            )()
+
+            Aggregate(groupingExprs, newAggregateExprs, child, hint)
+          } else {
+            a
+          }
+
+        // We look for 'Distinct' nodes, which represent DISTINCT statements without specified keys
+        // (e.g., SELECT DISTINCT in SQL)
+        case d @ Distinct(child) =>
           // We ensure the child is tagged
-          val taggedChild = ensureProv(child, provenanceColName)
-          val childTag = getProvAttr(taggedChild, provenanceColName)
+          val childHasProv = hasProv(child, provenanceColName)
 
-          // The columns of grouping must be all the columns of the child except the provenance column.
-          val groupingCols =
-            taggedChild.output.filter(_.name != provenanceColName)
+          if (childHasProv) {
 
-          // We use the same logic as aggregation to merge the tags(A ⊕ B)
-          val collectSet = AggregateExpression(
-            CollectSet(childTag),
-            Complete,
-            isDistinct = false
-          )
-          val combinedTag = Alias(
-            Concat(
-              Seq(
-                Literal("{"),
-                ConcatWs(Seq(Literal(" ⊕ "), collectSet)),
-                Literal("}")
-              )
-            ),
-            provenanceColName
-          )()
+            val childAttr = getProvAttr(child, provenanceColName)
+            val childCast = Cast(childAttr, StringType)
 
-          // We replace the Distinct node with an Aggregate node with
-          // the same grouping columns and the new tag as aggregate expression
-          Aggregate(
-            groupingExpressions = groupingCols,
-            aggregateExpressions = groupingCols :+ combinedTag,
-            child = taggedChild
-          )
+            // The columns of grouping must be all the columns of the child except the provenance column.
+            val groupingCols = child.output.filter(_.name != provenanceColName)
+
+            val collectSetExpr = AggregateExpression(
+              CollectSet(childCast),
+              Complete,
+              isDistinct = false
+            )
+            val joinedArray = ConcatWs(Seq(Literal(" ⊕ "), collectSetExpr))
+
+            // We add braces around the combined provenance tags if there are multiple tags
+            // to indicate that it's a combination of multiple rows (e.g., in case of duplicates)
+            val withBraces =
+              Concat(Seq(Literal("{"), joinedArray, Literal("}")))
+            val conditionalFormat = If(
+              GreaterThan(Size(collectSetExpr), Literal(1)),
+              withBraces,
+              joinedArray
+            )
+            val combinedTag = Alias(conditionalFormat, provenanceColName)()
+
+            // We replace the Distinct node with an Aggregate node with
+            // the same grouping columns and the new tag as aggregate expression
+            Aggregate(
+              groupingExpressions = groupingCols,
+              aggregateExpressions = groupingCols :+ combinedTag,
+              child = child
+            )
+          } else {
+            d
+          }
+
+        // We look for 'Deduplicate' nodes, which represent Distinct statements with specified keys
+        // (e.g., distinct or dropDuplicates in DataFrame API)
+        case d @ Deduplicate(keys, child) =>
+          // We ensure the child is tagged
+          val childHasProv = hasProv(child, provenanceColName)
+
+          if (childHasProv) {
+            val provAttr = getProvAttr(child, provenanceColName)
+            val provAttrCast = Cast(provAttr, StringType)
+
+            // The columns of grouping must be all the columns of the child except the provenance column.
+            val validKeys = keys.filter(_.name != provenanceColName)
+
+            val collectSetExpr = AggregateExpression(
+              CollectSet(provAttrCast),
+              Complete,
+              isDistinct = false
+            )
+            val joinedArray = ConcatWs(Seq(Literal(" ⊕ "), collectSetExpr))
+
+            // We add braces around the combined provenance tags if there are multiple tags
+            // to indicate that it's a combination of multiple rows (e.g., in case of duplicates
+            val withBraces =
+              Concat(Seq(Literal("{"), joinedArray, Literal("}")))
+            val conditionalFormat = If(
+              GreaterThan(Size(collectSetExpr), Literal(1)),
+              withBraces,
+              joinedArray
+            )
+            val combinedTag = Alias(conditionalFormat, provenanceColName)()
+
+            // We replace the Deduplicate node with an Aggregate node with
+            // the same grouping keys and the new tag as aggregate expression
+            val newAggregateExprs = validKeys :+ combinedTag
+            Aggregate(validKeys, newAggregateExprs, child)
+
+          } else {
+            d
+          }
 
       }
     }

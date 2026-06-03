@@ -1,10 +1,11 @@
-package org.dataprov.dp
+package org.dataprov.dp.sparkdataprovenance
 
 import org.apache.spark.sql.SparkSession
 
-trait SparkConfTestUtils {
-
-  protected def withSparkConf[T](spark: SparkSession, key: String, value: String)(testBody: => T): T = {
+object SparkConfUtils {
+  def withSparkConf[T](spark: SparkSession, key: String, value: String)(
+      testBody: => T
+  ): T = {
     val previousValue = spark.conf.getOption(key)
     spark.conf.set(key, value)
 
@@ -13,7 +14,7 @@ trait SparkConfTestUtils {
     } finally {
       previousValue match {
         case Some(previous) => spark.conf.set(key, previous)
-        case None => spark.conf.unset(key)
+        case None           => spark.conf.unset(key)
       }
     }
   }
