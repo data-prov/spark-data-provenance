@@ -1,4 +1,4 @@
-package org.dataprov.dp
+package org.dataprov.dp.sparkdataprovenance
 
 import com.github.mrpowers.spark.fast.tests.DataFrameComparer
 import org.scalatest.funspec.AnyFunSpec
@@ -6,11 +6,10 @@ import org.scalatest.matchers.should.Matchers
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions.{col, lit}
 
-import org.dataprov.dp.sparkdataprovenance.DataFrameProvenanceTransformations._
+import org.dataprov.dp.sparkdataprovenance.ProvenanceApi._
 
-class ProvenanceProjectTest extends AnyFunSpec with Matchers with SparkSessionTestWrapper with DataFrameComparer with SparkConfTestUtils {
+class ProvenanceProjectTest extends AnyFunSpec with Matchers with SparkSessionTestWrapper with DataFrameComparer with ProvenanceModeTestUtils {
   import spark.implicits._
-  spark.conf.set("spark.provenance.enabled", "true")
 
   private def toyDf: DataFrame = Seq(
     ("a", 1, 2.3),
@@ -28,7 +27,7 @@ class ProvenanceProjectTest extends AnyFunSpec with Matchers with SparkSessionTe
   }
 
   describe("Projecting columns from a DataFrame/view with provenance") {
-    it("should preserve the provenance column and its values when projecting") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when projecting") {
       val df = toyDf
 
       val dfWithProvProjected = addProvenance(df, col("B")).select("A", "B")
@@ -37,7 +36,7 @@ class ProvenanceProjectTest extends AnyFunSpec with Matchers with SparkSessionTe
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvProjected)
     }
 
-    it("should preserve the provenance column and its values when projecting with views") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when projecting with views") {
       val df = toyDf
       df.createOrReplaceTempView(viewName)
       addProvenance(spark, viewName, col("B"))
@@ -48,7 +47,7 @@ class ProvenanceProjectTest extends AnyFunSpec with Matchers with SparkSessionTe
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvProjected)
     }
 
-    it ("should not duplicate provenance when explicitly selected") {
+    itWithProvenanceEnabled("should not duplicate provenance when explicitly selected") {
       val df = toyDf
 
       val dfWithProvProjected = addProvenance(df, col("B")).select("A", "B", defaultProvenanceColName)
@@ -57,7 +56,7 @@ class ProvenanceProjectTest extends AnyFunSpec with Matchers with SparkSessionTe
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvProjected)
     }
 
-    it ("should not duplicate provenance when explicitly selected with views") {
+    itWithProvenanceEnabled("should not duplicate provenance when explicitly selected with views") {
       val df = toyDf
       df.createOrReplaceTempView(viewName)
       addProvenance(spark, viewName, col("B"))
@@ -68,7 +67,7 @@ class ProvenanceProjectTest extends AnyFunSpec with Matchers with SparkSessionTe
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvProjected)
     }
 
-    it("should preserve provenance when aliasing columns") {
+    itWithProvenanceEnabled("should preserve provenance when aliasing columns") {
       val df = toyDf
 
       val dfWithProvProjected = spark.sql(s"SELECT A, B, B AS B_alias FROM $viewName")
@@ -78,7 +77,7 @@ class ProvenanceProjectTest extends AnyFunSpec with Matchers with SparkSessionTe
       assertSmallDataFrameEquality(dfWithProvProjected, expected)
     }
 
-    it ("should preserve provenance when aliasing columns with views") {
+    itWithProvenanceEnabled("should preserve provenance when aliasing columns with views") {
       val df = toyDf
       df.createOrReplaceTempView(viewName)
       addProvenance(spark, viewName, col("B"))
@@ -89,7 +88,7 @@ class ProvenanceProjectTest extends AnyFunSpec with Matchers with SparkSessionTe
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvProjected)
     }
 
-    it("should preserve provenance even when selecting only literals") {
+    itWithProvenanceEnabled("should preserve provenance even when selecting only literals") {
       val df = toyDf
 
       val dfWithProvProjected = addProvenance(df, col("B")).select(col("A"), col("B"), col("C"), lit(1).as("literal_col"))
@@ -98,7 +97,7 @@ class ProvenanceProjectTest extends AnyFunSpec with Matchers with SparkSessionTe
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvProjected)
     }
 
-    it("should preserve provenance even when selecting only literals with views") {
+    itWithProvenanceEnabled("should preserve provenance even when selecting only literals with views") {
       val df = toyDf
       df.createOrReplaceTempView(viewName)
       addProvenance(spark, viewName, col("B"))
@@ -109,7 +108,7 @@ class ProvenanceProjectTest extends AnyFunSpec with Matchers with SparkSessionTe
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvProjected)
     }
 
-    it("should preserve provenance when projecting and renaming columns") {
+    itWithProvenanceEnabled("should preserve provenance when projecting and renaming columns") {
       val df = toyDf
 
       val dfWithProvProjected = addProvenance(df, col("B")).withColumn("withC", col("C")).withColumnRenamed("B", "B_renamed").select("A", "B_renamed", "withC")
@@ -118,7 +117,7 @@ class ProvenanceProjectTest extends AnyFunSpec with Matchers with SparkSessionTe
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvProjected)
     }
 
-    it("should preserve provenance when projecting and renaming columns with views") {
+    itWithProvenanceEnabled("should preserve provenance when projecting and renaming columns with views") {
       val df = toyDf
       df.createOrReplaceTempView(viewName)
       addProvenance(spark, viewName, col("B"))

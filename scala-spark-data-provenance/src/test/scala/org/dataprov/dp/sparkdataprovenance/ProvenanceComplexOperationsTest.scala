@@ -1,11 +1,9 @@
-package org.dataprov.dp
+package org.dataprov.dp.sparkdataprovenance
 
-import org.dataprov.dp.sparkdataprovenance.DataFrameProvenanceTransformations._
+import org.dataprov.dp.sparkdataprovenance.ProvenanceApi._
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
-import org.dataprov.dp.SparkConfTestUtils
-import org.dataprov.dp.SparkSessionTestWrapper
-import org.dataprov.dp.sparkdataprovenance.DataFrameProvenanceTransformations.defaultProvenanceColName
+import org.dataprov.dp.sparkdataprovenance.SparkSessionTestWrapper
 import org.scalatest.funspec.AnyFunSpec
 import org.scalatest.matchers.should.Matchers
 import com.github.mrpowers.spark.fast.tests.DataFrameComparer
@@ -14,9 +12,8 @@ import org.apache.spark.sql.Row
 import org.apache.spark.sql.types.StringType
 import org.apache.spark.sql.types.StructType
 
-class ProvenanceComplexOperationsTest extends AnyFunSpec with Matchers with SparkSessionTestWrapper with DataFrameComparer with SparkConfTestUtils {
+class ProvenanceComplexOperationsTest extends AnyFunSpec with Matchers with SparkSessionTestWrapper with DataFrameComparer with ProvenanceModeTestUtils {
   import spark.implicits._
-  spark.conf.set("spark.provenance.enabled", "true")
 
   private def toyDfLeft: DataFrame = Seq(
     ("a", 1, 2.3),
@@ -41,7 +38,7 @@ class ProvenanceComplexOperationsTest extends AnyFunSpec with Matchers with Spar
   }
 
   describe("Complex operations on DataFrames/views with provenance") {
-    it("should preserve the provenance column and its values when performing a cross join followed by a distinct") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when performing a cross join followed by a distinct") {
       val dfLeft = toyDfLeft
       val dfRight = toyDfRight
 
@@ -61,7 +58,7 @@ class ProvenanceComplexOperationsTest extends AnyFunSpec with Matchers with Spar
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
     }
 
-    it("should preserve the provenance column and its values when performing a cross join followed by a distinct with views") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when performing a cross join followed by a distinct with views") {
       val dfLeft = toyDfLeft
       val dfRight = toyDfRight
 
@@ -90,7 +87,7 @@ class ProvenanceComplexOperationsTest extends AnyFunSpec with Matchers with Spar
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
     }
 
-    it("should preserve the provenance column and its values when performing multiple joins"){
+    itWithProvenanceEnabled("should preserve the provenance column and its values when performing multiple joins"){
       //TODO: Add more complex join scenarios (e.g., multiple joins...) and ensure provenance is preserved correctly.
       val dfLeft = toyDfLeft
       val dfRight = toyDfRight
@@ -130,7 +127,7 @@ class ProvenanceComplexOperationsTest extends AnyFunSpec with Matchers with Spar
         assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
     }
 
-    it("should preserve the provenance column and its values when performing multiple joins with views"){
+    itWithProvenanceEnabled("should preserve the provenance column and its values when performing multiple joins with views"){
       val dfLeft = toyDfLeft
       val dfRight = toyDfRight
       val dfThird: DataFrame = Seq(
@@ -171,7 +168,7 @@ class ProvenanceComplexOperationsTest extends AnyFunSpec with Matchers with Spar
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
     }
 
-    it("should preserve the provenance column and its values when performing joins followed by a union and select distinct") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when performing joins followed by a union and select distinct") {
       val df: DataFrame = spark.createDataFrame(
         Seq(
             ("a", "b", "c"),
@@ -224,7 +221,7 @@ class ProvenanceComplexOperationsTest extends AnyFunSpec with Matchers with Spar
 
     }
 
-    it("should preserve the provenance column and its values when performing joins followed by a union and select distinct with views") {
+    itWithProvenanceEnabled("should preserve the provenance column and its values when performing joins followed by a union and select distinct with views") {
       val df: DataFrame = spark.createDataFrame(
         Seq(
           ("a", "b", "c"),

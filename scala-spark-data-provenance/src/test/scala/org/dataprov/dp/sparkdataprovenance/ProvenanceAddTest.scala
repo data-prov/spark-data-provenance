@@ -1,14 +1,14 @@
-package org.dataprov.dp
+package org.dataprov.dp.sparkdataprovenance
 
 import org.scalatest.funspec.AnyFunSpec
 import org.scalatest.matchers.should.Matchers
-import org.dataprov.dp.sparkdataprovenance.DataFrameProvenanceTransformations._
+import org.dataprov.dp.sparkdataprovenance.ProvenanceApi._
 import com.github.mrpowers.spark.fast.tests.DataFrameComparer
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions.col
 
 
-class ProvenanceAddTest extends AnyFunSpec with Matchers with SparkSessionTestWrapper with DataFrameComparer with SparkConfTestUtils {
+class ProvenanceAddTest extends AnyFunSpec with Matchers with SparkSessionTestWrapper with DataFrameComparer with ProvenanceModeTestUtils {
   
   import spark.implicits._
 
@@ -26,29 +26,13 @@ class ProvenanceAddTest extends AnyFunSpec with Matchers with SparkSessionTestWr
     assert(dfWithProv.columns.contains(provColName))
 
     // 2. The original data (except provenance) should be preserved
-
-    // FIX ME: spark-provenance: we may want to provide a utility method that ignores the provenance
-    // column when comparing dataframes, to avoid having to disable provenance for this check
-
-    // The drop operation will create a Project node in the plan, which will be visible to our rule. 
-    // To avoid this, we need to disable provenance for this check
-    // The session is created with the extension in SparkSessionTestWrapper
-    spark.conf.set("spark.provenance.enabled", "false") 
-    try {
-      assertSmallDataFrameEquality(dfWithProv.drop(provColName), df)
-    } finally {
-      spark.conf.set("spark.provenance.enabled", "true")
-    }
+    assert(!isProvenanceEnabled(spark))
+    assertSmallDataFrameEquality(dfWithProv.drop(provColName), df)
   }
 
   private def assertDataFrameProvenanceIdempotence(dfWithProv: DataFrame): Unit = {
     // If the dataframe already has a provenance column, it should stay unchanged and no new column should be added
-    spark.conf.set("spark.provenance.enabled", "false")
-    try {
-      assertSmallDataFrameEquality(addProvenance(dfWithProv), dfWithProv)
-    } finally {
-      spark.conf.set("spark.provenance.enabled", "true")
-    }
+    assertSmallDataFrameEquality(addProvenance(dfWithProv), dfWithProv)
   }
 
   private def assertViewProvenanceIdempotence(viewName: String): Unit = {
@@ -67,7 +51,9 @@ class ProvenanceAddTest extends AnyFunSpec with Matchers with SparkSessionTestWr
   }
 
   describe("Adding provenance tag (column) to a DataFrame/view") {
-    it("should add a provenance column to a dataframe if not already present") {
+    // FIXME: the tests below should be runnable even with provenance enabled, but for now we disable it
+    // The drop operation will create a Project node in the plan, which will be visible to our rule. 
+    itWithProvenanceDisabled("should add a provenance column to a dataframe if not already present") {
       val df = toyDf
 
       // Add provenance to dataframe
@@ -78,20 +64,18 @@ class ProvenanceAddTest extends AnyFunSpec with Matchers with SparkSessionTestWr
       assertDataFrameProvenanceIdempotence(dfWithProv)
     }
 
-    it("should add a provenance column to a dataframe if not already present with custom column name") {
+    itWithProvenanceDisabled("should add a provenance column to a dataframe if not already present with custom column name", customProvColName) {
       val df = toyDf
 
-      withSparkConf(spark, provenanceColConfKey, customProvColName) {
-        // Add provenance to dataframe with custom column name
-        val dfWithProv = addProvenance(df)
+      // Add provenance to dataframe with custom column name
+      val dfWithProv = addProvenance(df)
 
-        // Perform checks
-        assertProvenanceColumnAndDataPreserved(df, customProvColName, dfWithProv)
-        assertDataFrameProvenanceIdempotence(dfWithProv)
-      }
+      // Perform checks
+      assertProvenanceColumnAndDataPreserved(df, customProvColName, dfWithProv)
+      assertDataFrameProvenanceIdempotence(dfWithProv)
     }
 
-    it("should add a provenance column to a dataframe with a provided expression") {
+    itWithProvenanceDisabled("should add a provenance column to a dataframe with a provided expression") {
       val df = toyDf
       val providedProvenance = col("B")
 
@@ -101,7 +85,7 @@ class ProvenanceAddTest extends AnyFunSpec with Matchers with SparkSessionTestWr
       assertSmallDataFrameEquality(dfWithProv, expected)
     }
 
-    it("should replace an existing provenance column on a dataframe when a provided expression is used") {
+    itWithProvenanceDisabled("should replace an existing provenance column on a dataframe when a provided expression is used") {
       val df = toyDf
       val withInitialProv = addProvenance(df, col("B"))
 
@@ -112,7 +96,7 @@ class ProvenanceAddTest extends AnyFunSpec with Matchers with SparkSessionTestWr
     }
 
 
-    it("should add a provenance column to a view if not already present") {
+    itWithProvenanceDisabled("should add a provenance column to a view if not already present") {
       val df = toyDf
       df.createOrReplaceTempView(viewName)
 
@@ -124,21 +108,19 @@ class ProvenanceAddTest extends AnyFunSpec with Matchers with SparkSessionTestWr
       assertViewProvenanceIdempotence(viewName)
     }
 
-    it("should add a provenance column to a view if not already present with custom column name") {
+    itWithProvenanceDisabled("should add a provenance column to a view if not already present with custom column name", customProvColName) {
       val df = toyDf
       df.createOrReplaceTempView(viewName)
 
-      withSparkConf(spark, provenanceColConfKey, customProvColName) {
-        // Add provenance to dataframe with custom column name
-        addProvenance(spark, viewName)
+      // Add provenance to dataframe with custom column name
+      addProvenance(spark, viewName)
 
-        // Perform checks
-        assertProvenanceColumnAndDataPreserved(df, customProvColName, spark.table(viewName))
-        assertViewProvenanceIdempotence(viewName)
-      }
+      // Perform checks
+      assertProvenanceColumnAndDataPreserved(df, customProvColName, spark.table(viewName))
+      assertViewProvenanceIdempotence(viewName)
     }
 
-    it("should add a provenance column to a view with a provided expression") {
+    itWithProvenanceDisabled("should add a provenance column to a view with a provided expression") {
       val df = toyDf
       df.createOrReplaceTempView(viewName)
 
@@ -148,7 +130,7 @@ class ProvenanceAddTest extends AnyFunSpec with Matchers with SparkSessionTestWr
       assertSmallDataFrameEquality(spark.table(viewName), expected)
     }
 
-    it("should replace an existing provenance column on a view when a provided expression is used") {
+    itWithProvenanceDisabled("should replace an existing provenance column on a view when a provided expression is used") {
       val df = toyDf
       df.createOrReplaceTempView(viewName)
 

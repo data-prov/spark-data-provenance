@@ -1,20 +1,18 @@
-package org.dataprov.dp
+package org.dataprov.dp.sparkdataprovenance
 
 import org.apache.spark.sql.SparkSessionExtensions
 
-// This extension injects the LogicalPlanWithProvenance rule into the SparkSession's analysis phase,
-// which adds provenance attributes to the logical plan and rewrites operators to propagate provenance information.
-object ProvenanceExtension {
+object SparkProvenanceExtension {
   def register(
       // Allow users to optionally provide custom provenance operators and builders when registering the extension
       provenanceBuilder: ProvenanceBuilder = DisplayStringProvenanceBuilder
   ): SparkSessionExtensions => Unit = { extensions =>
-    new ProvenanceExtension(provenanceBuilder).apply(extensions)
+    new SparkProvenanceExtension(provenanceBuilder).apply(extensions)
   }
 }
 
 // This class acts as the registration hook
-class ProvenanceExtension(
+class SparkProvenanceExtension(
     val provenanceBuilder: ProvenanceBuilder
 ) extends (SparkSessionExtensions => Unit) {
 

@@ -1,4 +1,4 @@
-package org.dataprov.dp
+package org.dataprov.dp.sparkdataprovenance
 
 import org.apache.spark.sql.catalyst.expressions.And
 import org.apache.spark.sql.catalyst.expressions.ArrayDistinct
@@ -227,7 +227,7 @@ object BooleanProvenanceBuilder extends ProvenanceBuilder {
 // Semi Why-provenance builder: explicit alias over witness-set semantics.
 // The provenance is represented as array<string>.
 // This is useful when consumers prefer structured provenance tags over display strings.
-// The exact result will be preserved for single, join and aggregate operations, but distinct 
+// The exact result will be preserved for single, join and aggregate operations, but distinct
 //will not distinguish between multiple rows contributing to the same output row,
 object SemiWhyProvenanceBuilder extends ProvenanceBuilder {
   private val arrayStringType = ArrayType(StringType, containsNull = true)
@@ -287,7 +287,7 @@ object SemiWhyProvenanceBuilder extends ProvenanceBuilder {
   }
 }
 
-// 
+//
 object FullWhyProvenanceBuilder extends ProvenanceBuilder {
   override val provType: DataType = SemiWhyProvenanceBuilder.provType
 
@@ -307,8 +307,7 @@ object FullWhyProvenanceBuilder extends ProvenanceBuilder {
     SemiWhyProvenanceBuilder.aggregate(attr)
 }
 
-
-// The aggregate and distinct will not distinguish between multiple rows contributing to the same output row, 
+// The aggregate and distinct will not distinguish between multiple rows contributing to the same output row,
 // but the join will still combine left and right provenance tags. This is a more lightweight representation
 // that may be sufficient for some use cases.
 object LightWhyProvenanceBuilder extends ProvenanceBuilder {
@@ -329,5 +328,3 @@ object LightWhyProvenanceBuilder extends ProvenanceBuilder {
   override def aggregate(attr: Attribute): Expression =
     SemiWhyProvenanceBuilder.distinct(attr)
 }
-
-

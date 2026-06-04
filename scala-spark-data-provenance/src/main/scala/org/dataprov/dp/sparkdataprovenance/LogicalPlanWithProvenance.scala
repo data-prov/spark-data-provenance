@@ -1,4 +1,4 @@
-package org.dataprov.dp
+package org.dataprov.dp.sparkdataprovenance
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.Alias
@@ -17,7 +17,7 @@ import org.apache.spark.sql.catalyst.plans.logical.Project
 import org.apache.spark.sql.catalyst.plans.logical.Sort
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
-import org.dataprov.dp.sparkdataprovenance.DataFrameProvenanceTransformations._
+import org.dataprov.dp.sparkdataprovenance.ProvenanceApi._
 
 case class LogicalPlanWithProvenance(
     spark: SparkSession,
@@ -42,11 +42,9 @@ case class LogicalPlanWithProvenance(
 
   override def apply(plan: LogicalPlan): LogicalPlan = {
     // Get Spark provenance configurations
-    val provenanceEnabled: Boolean = spark.sessionState.conf
-      .getConfString(provenanceEnabledConf, "false") == "true"
     val provenanceColName: String = provenanceColumnName(spark)
 
-    if (!provenanceEnabled) {
+    if (!isProvenanceEnabled(spark)) {
       plan // If the feature is not enabled, return the plan unchanged
     } else {
       // transformUp traverses the tree from the bottom leaves to the top root
@@ -172,7 +170,6 @@ case class LogicalPlanWithProvenance(
           }
 
         // We look for 'Aggregate' nodes, which represent GROUP BY statements
-        // TODO: we may want to support a different operator for GROUP BY vs DISTINCT
         case a @ Aggregate(groupingExprs, aggregateExprs, child, hint) =>
           // We check if the child has the provenance column and if the aggregate itself already has it
           val childHasProv = hasProv(child, provenanceColName)

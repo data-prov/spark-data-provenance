@@ -1,8 +1,8 @@
-package org.dataprov.dp
+package org.dataprov.dp.sparkdataprovenance
 
 import org.apache.spark.sql.SparkSession
 import org.apache.log4j.{Logger, Level}
-import org.dataprov.dp.ProvenanceExtension
+import org.dataprov.dp.sparkdataprovenance.SparkProvenanceExtension
 
 trait SparkSessionTestWrapper {
   // Helper method to create a SparkSession with the ProvenanceExtension registered, 
@@ -16,11 +16,11 @@ trait SparkSessionTestWrapper {
       .master("local")
       .appName(appName)
       .withExtensions(
-        ProvenanceExtension.register(provenanceBuilder)
+        SparkProvenanceExtension.register(provenanceBuilder)
       )
       .getOrCreate()
   }
-  // Create a SparkSession with the ProvenanceExtension registered, and set log level to ERROR to reduce noise in test output
+  // Create a SparkSession with the SparkProvenanceExtension registered, and set log level to ERROR to reduce noise in test output
   lazy val spark: SparkSession = {
     Logger.getLogger("org").setLevel(Level.OFF)
     sparkWithProvenance()
