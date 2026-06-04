@@ -283,13 +283,27 @@ object SemiWhyProvenanceBuilder extends ProvenanceBuilder {
       Complete,
       isDistinct = false
     )
-    ArrayDistinct(Flatten(collectSetExpr))
+    ArrayDistinct(collectSetExpr)
   }
 }
 
 //
 object FullWhyProvenanceBuilder extends ProvenanceBuilder {
   override val provType: DataType = SemiWhyProvenanceBuilder.provType
+
+  private val arrayStringType = ArrayType(StringType, containsNull = true)
+
+  private def toArray(attr: Attribute): Expression = {
+    attr.dataType match {
+      case ArrayType(StringType, _) => attr
+      case _ =>
+        If(
+          IsNull(attr),
+          Literal.create(null, arrayStringType),
+          CreateArray(Seq(Cast(attr, StringType)))
+        )
+    }
+  }
 
   override def single(attr: Attribute): Expression =
     SemiWhyProvenanceBuilder.single(attr)
@@ -304,7 +318,14 @@ object FullWhyProvenanceBuilder extends ProvenanceBuilder {
     SemiWhyProvenanceBuilder.aggregate(attr)
 
   override def aggregate(attr: Attribute): Expression =
-    SemiWhyProvenanceBuilder.aggregate(attr)
+    {
+      val collectSetExpr = AggregateExpression(
+        CollectSet(toArray(attr)),
+        Complete,
+        isDistinct = false
+      )
+      ArrayDistinct(Flatten(collectSetExpr))
+    }
 }
 
 // The aggregate and distinct will not distinguish between multiple rows contributing to the same output row,
