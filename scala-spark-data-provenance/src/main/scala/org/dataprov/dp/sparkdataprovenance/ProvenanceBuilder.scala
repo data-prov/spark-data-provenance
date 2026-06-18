@@ -1,7 +1,9 @@
 package org.dataprov.dp.sparkdataprovenance
 
 import org.apache.spark.sql.catalyst.expressions.And
+import org.apache.spark.sql.catalyst.expressions.ArrayAggregate
 import org.apache.spark.sql.catalyst.expressions.ArrayDistinct
+import org.apache.spark.sql.catalyst.expressions.ArrayTransform
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.expressions.Cast
 import org.apache.spark.sql.catalyst.expressions.Coalesce
@@ -14,9 +16,13 @@ import org.apache.spark.sql.catalyst.expressions.GreaterThan
 import org.apache.spark.sql.catalyst.expressions.If
 import org.apache.spark.sql.catalyst.expressions.IsNotNull
 import org.apache.spark.sql.catalyst.expressions.IsNull
+import org.apache.spark.sql.catalyst.expressions.LambdaFunction
 import org.apache.spark.sql.catalyst.expressions.Literal
+import org.apache.spark.sql.catalyst.expressions.NamedLambdaVariable
 import org.apache.spark.sql.catalyst.expressions.Size
+import org.apache.spark.sql.catalyst.expressions.ZipWith
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateExpression
+import org.apache.spark.sql.catalyst.expressions.aggregate.CollectList
 import org.apache.spark.sql.catalyst.expressions.aggregate.CollectSet
 import org.apache.spark.sql.catalyst.expressions.aggregate.Complete
 import org.apache.spark.sql.catalyst.expressions.aggregate.Max
@@ -278,54 +284,131 @@ object SemiWhyProvenanceBuilder extends ProvenanceBuilder {
   override def aggregate(
       attr: Attribute
   ): Expression = {
-    val collectSetExpr = AggregateExpression(
-      CollectSet(toArray(attr)),
+
+    val collectListExpr = AggregateExpression(
+      CollectList(toArray(attr)),
       Complete,
       isDistinct = false
     )
-    ArrayDistinct(collectSetExpr)
+    ArrayDistinct(Flatten(collectListExpr))
   }
 }
 
-//
+// Full Why-provenance builder: tracks conjunctions and choices explicitly.
+// The provenance is represented as array<array<string>>.
+// Each outer element is one factor in the provenance formula.
+// Each inner array contains the alternatives for that factor.
+// Example: [[a0, a2], [a1], [b1]] encodes (a0 ⊕ a2) ⊗ a1 ⊗ b1.
 object FullWhyProvenanceBuilder extends ProvenanceBuilder {
-  override val provType: DataType = SemiWhyProvenanceBuilder.provType
+  private val choiceGroupType = ArrayType(StringType, containsNull = true)
+  private val factorizedProvenanceType = ArrayType(choiceGroupType, containsNull = true)
 
-  private val arrayStringType = ArrayType(StringType, containsNull = true)
+  // The provenance type is array<array<string>>, where the outer array represents conjunction (AND)
+  // and the inner arrays represent disjunction (OR) of alternatives for each factor.
+  override val provType: DataType = factorizedProvenanceType
 
-  private def toArray(attr: Attribute): Expression = {
+  // For a single input row, the provenance is represented as a single factor with a single choice,
+  // i.e. [[tag]]
+  private def singletonFactor(choice: Expression): Expression =
+    CreateArray(Seq(CreateArray(Seq(choice))))
+
+  // An empty provenance is represented as an empty array of factors: [] 
+  private def emptyFactorizedProvenance: Expression =
+    Literal.create(Seq.empty, factorizedProvenanceType)
+
+  // Normalize the provenance attribute to the expected format of array<array<string>>.
+  private def normalizeToChoiceFactors(attr: Expression): Expression = {
     attr.dataType match {
-      case ArrayType(StringType, _) => attr
+      case ArrayType(ArrayType(StringType, _), _) =>
+        attr
+      case ArrayType(StringType, _) =>
+        val elem =
+          NamedLambdaVariable("fullWhyElement", StringType, nullable = true)
+        ArrayTransform(
+          attr,
+          LambdaFunction(CreateArray(Seq(elem)), Seq(elem))
+        )
       case _ =>
         If(
           IsNull(attr),
-          Literal.create(null, arrayStringType),
-          CreateArray(Seq(Cast(attr, StringType)))
+          Literal.create(null, factorizedProvenanceType),
+          singletonFactor(Cast(attr, StringType))
         )
     }
   }
+  // For JOIN, we combine factors from left and right with AND, and merge alternatives within each factor with OR.
+  private def mergeAlternativesByPosition(left: Expression, right: Expression ): Expression = {
+    val leftChoice = NamedLambdaVariable("leftChoice", choiceGroupType, nullable = true)
+    val rightChoice = NamedLambdaVariable("rightChoice", choiceGroupType, nullable = true)
 
+    // For each position, we take the union of alternatives from left and right
+    ZipWith(
+      left,
+      right,
+      // If both sides have alternatives, merge them with OR (union).
+      // If only one side has alternatives, take those.
+      LambdaFunction(
+        If(
+          And(IsNotNull(leftChoice), IsNotNull(rightChoice)),
+          ArrayDistinct(Concat(Seq(leftChoice, rightChoice))),
+          Coalesce(Seq(leftChoice, rightChoice))
+        ),
+        Seq(leftChoice, rightChoice)
+      )
+    )
+  }
+  // For DISTINCT / DEDUPLICATE, we take the set of all alternatives for each factor across rows in the group.
+  private def collectDistinctRows(attr: Attribute): Expression =
+    AggregateExpression(
+      CollectSet(normalizeToChoiceFactors(attr)),
+      Complete,
+      isDistinct = false
+    )
+    
+  // For a single input row, we normalize the provenance attribute to the expected format of array<array<string>>.
   override def single(attr: Attribute): Expression =
-    SemiWhyProvenanceBuilder.single(attr)
+    normalizeToChoiceFactors(attr)
 
+  // For JOIN, we combine factors from left and right with AND, and merge alternatives within each factor with OR.
   override def join(
       left: Attribute,
       right: Attribute
-  ): Expression =
-    SemiWhyProvenanceBuilder.join(left, right)
+  ): Expression = {
+    // JOIN preserves conjunction: concatenate the factors from both sides.
+    val leftFactors = normalizeToChoiceFactors(left)
+    val rightFactors = normalizeToChoiceFactors(right)
+    val merged = ArrayDistinct(Concat(Seq(leftFactors, rightFactors)))
 
-  override def distinct(attr: Attribute): Expression =
-    SemiWhyProvenanceBuilder.aggregate(attr)
+    Coalesce(Seq(merged, leftFactors, rightFactors))
+  }
 
-  override def aggregate(attr: Attribute): Expression =
-    {
-      val collectSetExpr = AggregateExpression(
-        CollectSet(toArray(attr)),
-        Complete,
-        isDistinct = false
-      )
-      ArrayDistinct(Flatten(collectSetExpr))
-    }
+  override def distinct(attr: Attribute): Expression = {
+    // DISTINCT preserves factor positions but merges alternatives inside each factor.
+    val collectedChoices = collectDistinctRows(attr)
+    val accChoices =
+      NamedLambdaVariable("accChoices", factorizedProvenanceType, nullable = true)
+    val rowChoices =
+      NamedLambdaVariable("rowChoices", factorizedProvenanceType, nullable = true)
+    val finishedChoices =
+      NamedLambdaVariable("finishedChoices", factorizedProvenanceType, nullable = true)
+
+    ArrayAggregate(
+      collectedChoices,
+      emptyFactorizedProvenance,
+      LambdaFunction(
+        mergeAlternativesByPosition(accChoices, rowChoices),
+        Seq(accChoices, rowChoices)
+      ),
+      LambdaFunction(finishedChoices, Seq(finishedChoices))
+    )
+  }
+
+  override def aggregate(attr: Attribute): Expression = {
+    // GROUP BY preserves conjunction and unions all contributing factors.
+    val collectedFactors = collectDistinctRows(attr)
+
+    ArrayDistinct(Flatten(collectedFactors))
+  }
 }
 
 // The aggregate and distinct will not distinguish between multiple rows contributing to the same output row,
