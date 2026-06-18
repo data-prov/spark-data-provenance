@@ -301,7 +301,8 @@ object SemiWhyProvenanceBuilder extends ProvenanceBuilder {
 // Example: [[a0, a2], [a1], [b1]] encodes (a0 ⊕ a2) ⊗ a1 ⊗ b1.
 object FullWhyProvenanceBuilder extends ProvenanceBuilder {
   private val choiceGroupType = ArrayType(StringType, containsNull = true)
-  private val factorizedProvenanceType = ArrayType(choiceGroupType, containsNull = true)
+  private val factorizedProvenanceType =
+    ArrayType(choiceGroupType, containsNull = true)
 
   // The provenance type is array<array<string>>, where the outer array represents conjunction (AND)
   // and the inner arrays represent disjunction (OR) of alternatives for each factor.
@@ -312,7 +313,7 @@ object FullWhyProvenanceBuilder extends ProvenanceBuilder {
   private def singletonFactor(choice: Expression): Expression =
     CreateArray(Seq(CreateArray(Seq(choice))))
 
-  // An empty provenance is represented as an empty array of factors: [] 
+  // An empty provenance is represented as an empty array of factors: []
   private def emptyFactorizedProvenance: Expression =
     Literal.create(Seq.empty, factorizedProvenanceType)
 
@@ -337,9 +338,14 @@ object FullWhyProvenanceBuilder extends ProvenanceBuilder {
     }
   }
   // For JOIN, we combine factors from left and right with AND, and merge alternatives within each factor with OR.
-  private def mergeAlternativesByPosition(left: Expression, right: Expression ): Expression = {
-    val leftChoice = NamedLambdaVariable("leftChoice", choiceGroupType, nullable = true)
-    val rightChoice = NamedLambdaVariable("rightChoice", choiceGroupType, nullable = true)
+  private def mergeAlternativesByPosition(
+      left: Expression,
+      right: Expression
+  ): Expression = {
+    val leftChoice =
+      NamedLambdaVariable("leftChoice", choiceGroupType, nullable = true)
+    val rightChoice =
+      NamedLambdaVariable("rightChoice", choiceGroupType, nullable = true)
 
     // For each position, we take the union of alternatives from left and right
     ZipWith(
@@ -364,7 +370,7 @@ object FullWhyProvenanceBuilder extends ProvenanceBuilder {
       Complete,
       isDistinct = false
     )
-    
+
   // For a single input row, we normalize the provenance attribute to the expected format of array<array<string>>.
   override def single(attr: Attribute): Expression =
     normalizeToChoiceFactors(attr)
@@ -386,11 +392,23 @@ object FullWhyProvenanceBuilder extends ProvenanceBuilder {
     // DISTINCT preserves factor positions but merges alternatives inside each factor.
     val collectedChoices = collectDistinctRows(attr)
     val accChoices =
-      NamedLambdaVariable("accChoices", factorizedProvenanceType, nullable = true)
+      NamedLambdaVariable(
+        "accChoices",
+        factorizedProvenanceType,
+        nullable = true
+      )
     val rowChoices =
-      NamedLambdaVariable("rowChoices", factorizedProvenanceType, nullable = true)
+      NamedLambdaVariable(
+        "rowChoices",
+        factorizedProvenanceType,
+        nullable = true
+      )
     val finishedChoices =
-      NamedLambdaVariable("finishedChoices", factorizedProvenanceType, nullable = true)
+      NamedLambdaVariable(
+        "finishedChoices",
+        factorizedProvenanceType,
+        nullable = true
+      )
 
     ArrayAggregate(
       collectedChoices,

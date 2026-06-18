@@ -17,7 +17,8 @@ object SparkProvenanceExtension {
         Some(SemiWhyProvenanceBuilder)
       case "fullwhy" | "full_why" | "full-why" | "fullwhyprovenancebuilder" =>
         Some(FullWhyProvenanceBuilder)
-      case "lightwhy" | "light_why" | "light-why" | "lightwhyprovenancebuilder" =>
+      case "lightwhy" | "light_why" | "light-why" |
+          "lightwhyprovenancebuilder" =>
         Some(LightWhyProvenanceBuilder)
       case _ => None
     }
