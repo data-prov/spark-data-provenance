@@ -5,7 +5,12 @@
 * [Fine\-grained data provenance for Spark](#fine-grained-data-provenance-for-spark)
   * [Table of Content (ToC)](#table-of-content-toc)
   * [Overview](#overview)
+  * [Core Architecture and Features](#core-architecture-and-features)
+    * [Selective Why-Provenance Modality](#selective-why-provenance-modality)
+    * [Supported SQL Operators](#supported-sql-operators)
+    * [Current Limitations](#current-limitations)
   * [References](#references)
+  * [Pre-requisites](#pre-requisites)
   * [Getting started](#getting-started)
 
 Created by [gh-md-toc](https://github.com/ekalinin/github-markdown-toc.go)
@@ -16,9 +21,52 @@ This [project](https://github.com/data-prov/spark-data-provenance)
 explores how Spark may be instrumented/complemented with fine-grained provenance
 features.
 
+In industrial Big Data pipelines, testing and debugging transformations on 
+massive datasets is both financially costly and computationally heavy. 
+This extension solves this friction point by performing backward lineage tracing 
+directly inside Spark. By identifying the exact source rows (tuples) that 
+contributed to a specific query output, it allows data engineers to automatically 
+isolate a **minimal, functional, and consistent slice of input data** ideal for 
+rapid local testing, prototyping, and debugging.
+
 Even though the members of the GitHub organization may be employed by
 some companies, they speak on their personal behalf and do not represent
 these companies.
+
+## Core Architecture and Features
+
+This tool hooks into **Spark Catalyst**, which is Spark's native query optimizer, 
+by injecting custom tree-rewriting rules extended from `Rule[LogicalPlan]`. 
+To guarantee absolute stability and avoid breaking internal operations (such as 
+native `.show()`), the provenance rules are resolved **post-hoc** once the original 
+logical tree is fully analyzed and stabilized.
+
+### Selective Why-Provenance Modality
+
+Standard academic why-provenance models evaluate and store every alternative path 
+that led to a specific output, generating nested multi-dimensional structures like 
+an array of arrays of tags (`Array[Array[Tag]]`). 
+
+To comply with performance Big Data requirements, this extension implements a 
+simplified approach: it isolates **only the minimum rows necessary and sufficient** 
+to generate the target result. This design choice flattens the output into a 
+single-dimension collection (`Array[Tag]`), reducing memory overhead and CPU 
+complexity during abstract syntax tree (AST) traversal. However, the set might not be 
+the real minimum set of rows as the selection is not done at the end but during the 
+traversal of the AST.
+
+### Supported SQL Operators
+The extension successfully propagates provenance tags across major relational algebra operators:
+*   **Projection / Selection:** `SELECT` (`Project`), `FILTER`
+*   **Sorting:** `ORDER BY` (`Sort`)
+*   **Deduplication:** `DISTINCT`, `Deduplicate`
+*   **Aggregations:** `GROUP BY` (`Aggregate`)
+*   **Jointures:** `JOIN` (`Inner`, `Left Outer`, `Right Outer`, `Full Outer`)
+
+### Current Limitations
+The engineering roadmap currently prioritizes the resolution of:
+*   **Set Theory Operators:** Complex negative provenance conditions like `EXCEPT`, `NOT IN` or `LEFT ANTI JOIN`.
+*   **Window Functions:** Analytical partitioning and ordering rules (`window functions`).
 
 ## References
 
