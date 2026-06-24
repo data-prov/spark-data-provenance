@@ -71,7 +71,8 @@ on the target use case:
   and heavy full recomputation of the pipeline.
 
 #### 2. Display Provenance (Default)
-* **Concept:** A human-readable text-based representation of the full lineage path.
+* **Concept:** A human-readable text-based representation of the full lineage path
+  with academic operators, without evaluation.
 * **Behavior:** It aggregates the operations and source identifiers into a 
   formatted string block appended to the processed data.
 * **Benefit:** Tailored for the developer experience. It allows users to quickly 
