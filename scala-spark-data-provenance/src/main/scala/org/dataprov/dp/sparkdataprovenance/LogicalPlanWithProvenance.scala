@@ -33,6 +33,7 @@ import org.apache.spark.sql.types.ArrayType
 import org.apache.spark.sql.types.BooleanType
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.types.StringType
+import org.apache.spark.sql.catalyst.plans.logical.Intersect
 
 case class LogicalPlanWithProvenance(
     spark: SparkSession,
@@ -100,6 +101,55 @@ case class LogicalPlanWithProvenance(
     }
   }
 
+  // Spark show() uses ToPrettyString, which can assert if it evaluates nulls
+  // on expressions marked non-nullable. For UNION branches without provenance,
+  // provide a neutral non-null provenance value per type.
+  private def unionMissingProvenanceValue(dataType: DataType): Expression =
+    dataType match {
+      case StringType => Literal("")
+      case BooleanType => Literal(false)
+      case arrayType: ArrayType => Literal.create(Seq.empty, arrayType)
+      case _ => Literal.create(null, dataType)
+    }
+
+  private def normalizeUnionChildWithProvenance(
+      child: LogicalPlan,
+      provenanceColName: String,
+      targetProvType: DataType,
+      hasChildrenWithoutProv: Boolean
+  ): LogicalPlan = {
+    val childProvAttr = getProvAttr(child, provenanceColName)
+    val needsNormalization =
+      hasChildrenWithoutProv || childProvAttr.dataType != targetProvType
+
+    if (!needsNormalization) {
+      child
+    } else {
+      val projectedOutput = child.output.map {
+        case attr: Attribute if attr.name == provenanceColName =>
+          val nullableAttr = attr.withNullability(true)
+          // Always cast from a nullable attribute to preserve nullable metadata
+          // after optimizer rewrites (important for Dataset.show / ToPrettyString).
+          val normalizedExpr = Cast(nullableAttr, targetProvType)
+          Alias(normalizedExpr, provenanceColName)()
+        case attr: Attribute => attr
+      }
+      Project(projectedOutput, child)
+    }
+  }
+
+  private def addUnionDefaultProvenance(
+      child: LogicalPlan,
+      provenanceColName: String,
+      targetProvType: DataType
+  ): LogicalPlan = {
+    val defaultProvExpr = Alias(
+      unionMissingProvenanceValue(targetProvType),
+      provenanceColName
+    )()
+    Project(child.output :+ defaultProvExpr, child)
+  }
+
   override def apply(plan: LogicalPlan): LogicalPlan = {
     // Get Spark provenance configurations
     val provenanceColName: String = provenanceColumnName(spark)
@@ -116,7 +166,7 @@ case class LogicalPlanWithProvenance(
           val childHasProv = hasProv(child, provenanceColName)
 
           // We partition the projectList into provenance expressions and non-provenance expressions
-          val (_, nonProvExprs) = projectList.partition {
+          val (provExprs, nonProvExprs) = projectList.partition {
             case Alias(_, name)  => name == provenanceColName
             case attr: Attribute => attr.name == provenanceColName
             case _               => false
@@ -127,13 +177,19 @@ case class LogicalPlanWithProvenance(
           val validNonProvExprs = nonProvExprs.filter(expr =>
             expr.references.subsetOf(child.outputSet)
           )
-  
-       
+
           if (childHasProv) {
-            // Always use the current child provenance attribute to avoid stale
-            // expression IDs when nested rewrites (e.g., Window -> Project -> Window)
-            // rebuild provenance multiple times.
-            val provExpr = getProvAttr(child, provenanceColName)
+            val childProvAttr = getProvAttr(child, provenanceColName)
+            // Reuse the existing provenance expression if all its references are still
+            // satisfied by the current child output (multi-pass stability: a fresh alias
+            // added on a previous pass is preserved unchanged on subsequent passes).
+            // Otherwise create a fresh Alias so that two derivations of the same source
+            // each get a distinct ExprId — required for correct self-join provenance
+            // tracking (without this, both sides of the join share the same ExprId and
+            // Spark resolves both references to the same row value).
+            val provExpr = provExprs.collectFirst {
+              case expr if expr.references.subsetOf(child.outputSet) => expr
+            }.getOrElse(Alias(childProvAttr, provenanceColName)())
             p.copy(projectList = validNonProvExprs :+ provExpr, child = child)
           } 
           
@@ -144,6 +200,30 @@ case class LogicalPlanWithProvenance(
           } else {
             p
           } 
+
+        // We look for 'Filter' nodes, which represent WHERE statements
+        case f @ Filter(_, _) =>
+          // Filtering does not require provenance-specific rewrites.
+          // Keep user predicate unchanged, including rows with null provenance.
+          f
+
+        // We look for 'Sort' nodes, which represent ORDER BY statements
+        case s @ Sort(order, global, child, hint) =>
+          // We check if the child has the provenance column and if the sort itself already has it
+          val childHasProv = hasProv(child, provenanceColName)
+          val sortHasProv = hasProv(s, provenanceColName)
+
+          // If the child has the provenance column but the sort does not,
+          // we need to add it to the sort order.
+          if (childHasProv && !sortHasProv) {
+            val provAttr = getProvAttr(child, provenanceColName)
+            // We add the provenance column at the end of the sort order to ensure a deterministic
+            // order of rows with the same values in the other sorted columns
+            val newOrder = order :+ SortOrder(provAttr, Ascending)
+            Sort(newOrder, global, child, hint)
+          } else {
+            s
+          }
 
         // We look for 'Join' nodes, which represent JOIN statements
         case j @ Join(left, right, joinType, condition, _) =>
@@ -202,31 +282,27 @@ case class LogicalPlanWithProvenance(
             j
           }
 
-        // We look for 'Filter' nodes, which represent WHERE statements
-        case f @ Filter(_, _) =>
-          // Filtering does not require provenance-specific rewrites.
-          // Keep user predicate unchanged, including rows with null provenance.
-          f
+        case i @ Intersect(left, right, isAll) =>
+          // We check if the left and right children have the provenance column
+          val leftHasProv = hasProv(left, provenanceColName)
+          val rightHasProv = hasProv(right, provenanceColName)
 
-        // We look for 'Sort' nodes, which represent ORDER BY statements
-        case s @ Sort(order, global, child, hint) =>
-          // We check if the child has the provenance column and if the sort itself already has it
-          val childHasProv = hasProv(child, provenanceColName)
-          val sortHasProv = hasProv(s, provenanceColName)
+          if (leftHasProv && rightHasProv) {
+            val leftProvAttr = getProvAttr(left, provenanceColName)
+            val rightProvAttr = getProvAttr(right, provenanceColName)
 
-          // If the child has the provenance column but the sort does not,
-          // we need to add it to the sort order.
-          if (childHasProv && !sortHasProv) {
-            val provAttr = getProvAttr(child, provenanceColName)
-            // We add the provenance column at the end of the sort order to ensure a deterministic
-            // order of rows with the same values in the other sorted columns
-            val newOrder = order :+ SortOrder(provAttr, Ascending)
-            Sort(newOrder, global, child, hint)
+            val intersectLogicExpr = provenanceBuilder.join(
+              leftProvAttr,
+              rightProvAttr
+            )
+
+            val combinedTag = Alias(intersectLogicExpr, provenanceColName)()
+
+            Project(i.output.filter(_.name != provenanceColName) :+ combinedTag, i)
           } else {
-            s
+            i
           }
 
-        
         // We look for 'Aggregate' nodes, which represent GROUP BY statements
         case a @ Aggregate(groupingExprs, aggregateExprs, child, hint) =>
           // We check if the child has the provenance column and if the aggregate itself already has it
@@ -247,6 +323,36 @@ case class LogicalPlanWithProvenance(
             Aggregate(groupingExprs, newAggregateExprs, child, hint)
           } else {
             a
+          }
+
+        case u @ Union(children, byName, allowMissingCol) =>
+          // We check if any of the children have the provenance column
+          val childrenWithProv = children.filter(hasProv(_, provenanceColName))
+          childrenWithProv.headOption match {
+            case None => u
+            case Some(firstProvChild) =>
+              val targetProvType = getProvAttr(firstProvChild, provenanceColName).dataType
+              val hasChildrenWithoutProv = children.exists(
+                child => !hasProv(child, provenanceColName)
+              )
+
+              val newChildren = children.map { child =>
+                if (hasProv(child, provenanceColName)) {
+                  normalizeUnionChildWithProvenance(
+                    child,
+                    provenanceColName,
+                    targetProvType,
+                    hasChildrenWithoutProv
+                  )
+                } else {
+                  addUnionDefaultProvenance(
+                    child,
+                    provenanceColName,
+                    targetProvType
+                  )
+                }
+              }
+              u.copy(children = newChildren)
           }
 
         // We look for 'Distinct' nodes, which represent DISTINCT statements without specified keys
