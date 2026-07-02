@@ -4,7 +4,13 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.Alias
 import org.apache.spark.sql.catalyst.expressions.Ascending
 import org.apache.spark.sql.catalyst.expressions.Attribute
+import org.apache.spark.sql.catalyst.expressions.Cast
+import org.apache.spark.sql.catalyst.expressions.CurrentRow
+import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.Literal
+import org.apache.spark.sql.catalyst.expressions.NamedExpression
 import org.apache.spark.sql.catalyst.expressions.SortOrder
+import org.apache.spark.sql.catalyst.expressions.UnaryMinus
 import org.apache.spark.sql.catalyst.plans.Cross
 import org.apache.spark.sql.catalyst.plans.logical.Aggregate
 import org.apache.spark.sql.catalyst.plans.logical.Deduplicate
@@ -15,9 +21,18 @@ import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlanIntegrity
 import org.apache.spark.sql.catalyst.plans.logical.Project
 import org.apache.spark.sql.catalyst.plans.logical.Sort
+import org.apache.spark.sql.catalyst.plans.logical.Window
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.dataprov.dp.sparkdataprovenance.ProvenanceApi._
+import org.apache.spark.sql.catalyst.expressions.UnboundedPreceding
+import org.apache.spark.sql.catalyst.expressions.UnboundedFollowing
+import org.apache.spark.sql.catalyst.expressions.{WindowExpression, WindowSpecDefinition, SpecifiedWindowFrame, RowFrame}
+import org.apache.spark.sql.catalyst.plans.logical.Union
+import org.apache.spark.sql.types.ArrayType
+import org.apache.spark.sql.types.BooleanType
+import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.types.StringType
 
 case class LogicalPlanWithProvenance(
     spark: SparkSession,
@@ -33,12 +48,57 @@ case class LogicalPlanWithProvenance(
   // Find and get the provenance attribute in a plan
   def getProvAttr(plan: LogicalPlan, provenanceColName: String): Attribute =
     if (LogicalPlanIntegrity.canGetOutputAttrs(plan))
-      plan.output.find(_.name == provenanceColName).get
+      plan.output.reverse.find(_.name == provenanceColName).get
     else throw new IllegalArgumentException("Plan is not resolved")
 
   // Custom tag to mark that a join has been processed to avoid infinite loops
   val PROCESSED_TAG: TreeNodeTag[Boolean] =
     TreeNodeTag[Boolean]("provenance_processed")
+
+  // Helper function to extract the numeric value from a boundary expression
+  private def boundaryValue(boundary: Expression): Option[Long] = boundary match {
+    case UnboundedPreceding             => Some(Long.MinValue)
+    case UnboundedFollowing             => Some(Long.MaxValue)
+    case CurrentRow                     => Some(0L)
+    case UnaryMinus(Literal(value: Byte, _), _)  => Some(-value.toLong)
+    case UnaryMinus(Literal(value: Short, _), _) => Some(-value.toLong)
+    case UnaryMinus(Literal(value: Int, _), _)   => Some(-value.toLong)
+    case UnaryMinus(Literal(value: Long, _), _)  => Some(-value)
+    case Literal(value: Byte, _)        => Some(value.toLong)
+    case Literal(value: Short, _)       => Some(value.toLong)
+    case Literal(value: Int, _)         => Some(value.toLong)
+    case Literal(value: Long, _)        => Some(value)
+    case _                              => None
+  }
+
+  // Helper function to find the widest specified window frame among a sequence of window expressions
+  // It returns an Option[SpecifiedWindowFrame] that represents the widest frame found
+  private def widestSpecifiedWindowFrame(windowExprs: Seq[NamedExpression]): Option[SpecifiedWindowFrame] = {
+    // Collect all specified window frames from the window expressions
+    val frames = windowExprs.flatMap(_.collect {
+      case WindowExpression(_, WindowSpecDefinition(_, _, frame: SpecifiedWindowFrame)) => frame
+    })
+    // Find the widest frame by comparing the lower and upper boundaries
+    frames.headOption.map { firstFrame =>
+      val compatibleFrames = frames.filter(_.frameType == firstFrame.frameType)
+
+      // Find the widest lower boundary among compatible frames
+      val widestLower = compatibleFrames
+        .flatMap(frame => boundaryValue(frame.lower).map(_ -> frame.lower))
+        .minByOption(_._1)
+        .map(_._2)
+        .getOrElse(firstFrame.lower)
+
+      // Find the widest upper boundary among compatible frames
+      val widestUpper = compatibleFrames
+        .flatMap(frame => boundaryValue(frame.upper).map(_ -> frame.upper))
+        .maxByOption(_._1)
+        .map(_._2)
+        .getOrElse(firstFrame.upper)
+
+      SpecifiedWindowFrame(firstFrame.frameType, widestLower, widestUpper)
+    }
+  }
 
   override def apply(plan: LogicalPlan): LogicalPlan = {
     // Get Spark provenance configurations
@@ -50,46 +110,43 @@ case class LogicalPlanWithProvenance(
       // transformUp traverses the tree from the bottom leaves to the top root
       plan.transformUp {
 
-        // We look for 'Project' nodes, which represent SELECT statements
+        // // We look for 'Project' nodes, which represent SELECT statements
         case p @ Project(projectList, child) =>
-          // We clean the project list from any expression that references columns
-          // not in the child output, as they would create dead references
-          // and prevent the correct propagation of the provenance column
-          val validProjectList = projectList.filter(expr =>
-            expr.references.subsetOf(child.outputSet)
-          )
-
-          // We check if the child has the provenance column.
-          // If yes, we force provenance to be the last projected column.
+          // We check if the child has the provenance column and if the project itself already has it
           val childHasProv = hasProv(child, provenanceColName)
 
-          // Keep provenance expressions (if any) separate so we can place exactly one at the end.
-          val (provExprs, nonProvExprs) = validProjectList.partition {
+          // We partition the projectList into provenance expressions and non-provenance expressions
+          val (_, nonProvExprs) = projectList.partition {
             case Alias(_, name)  => name == provenanceColName
             case attr: Attribute => attr.name == provenanceColName
             case _               => false
           }
 
+          // We filter the non-provenance expressions to keep only those that reference 
+          // columns from the child output
+          val validNonProvExprs = nonProvExprs.filter(expr =>
+            expr.references.subsetOf(child.outputSet)
+          )
+  
+       
           if (childHasProv) {
-            val provExpr = provExprs.lastOption.getOrElse(
-              getProvAttr(child, provenanceColName)
-            )
-            val reorderedProjectList = nonProvExprs :+ provExpr
-
-            if (reorderedProjectList != projectList) {
-              p.copy(projectList = reorderedProjectList, child = child)
-            } else {
-              p
-            }
-          } else if (validProjectList.size != projectList.size) {
-            // If we cleaned dead references, update the projection even without provenance.
-            p.copy(projectList = validProjectList, child = child)
+            // Always use the current child provenance attribute to avoid stale
+            // expression IDs when nested rewrites (e.g., Window -> Project -> Window)
+            // rebuild provenance multiple times.
+            val provExpr = getProvAttr(child, provenanceColName)
+            p.copy(projectList = validNonProvExprs :+ provExpr, child = child)
+          } 
+          
+          else if (validNonProvExprs.size != nonProvExprs.size) {
+            // If some expressions were removed because they reference columns that are no longer present 
+            // in the child output, we need to update the project list
+            p.copy(projectList = validNonProvExprs, child = child)
           } else {
             p
-          }
+          } 
 
         // We look for 'Join' nodes, which represent JOIN statements
-        case j @ Join(left, right, joinType, condition, hint) =>
+        case j @ Join(left, right, joinType, condition, _) =>
           // We check if the left and right children have the provenance column
           // and if the join itself already has it
           val leftHasProv = hasProv(left, provenanceColName)
@@ -119,7 +176,7 @@ case class LogicalPlanWithProvenance(
               )
 
               // We create an alias for the combined provenance expression to give it
-              //  the correct column name in the output
+              // the correct column name in the output
               val combinedTag = Alias(joinLogicExpr, provenanceColName)()
 
               // Wrap in a Project to materialize the combined provenance column
@@ -146,7 +203,7 @@ case class LogicalPlanWithProvenance(
           }
 
         // We look for 'Filter' nodes, which represent WHERE statements
-        case f @ Filter(condition, child) =>
+        case f @ Filter(_, _) =>
           // Filtering does not require provenance-specific rewrites.
           // Keep user predicate unchanged, including rows with null provenance.
           f
@@ -169,6 +226,7 @@ case class LogicalPlanWithProvenance(
             s
           }
 
+        
         // We look for 'Aggregate' nodes, which represent GROUP BY statements
         case a @ Aggregate(groupingExprs, aggregateExprs, child, hint) =>
           // We check if the child has the provenance column and if the aggregate itself already has it
@@ -231,7 +289,7 @@ case class LogicalPlanWithProvenance(
 
           // We ensure the child is tagged
           val childHasProv = hasProv(child, provenanceColName)
-
+          
           if (childHasProv) {
             val provAttr = getProvAttr(child, provenanceColName)
 
@@ -261,6 +319,57 @@ case class LogicalPlanWithProvenance(
             }
           }
 
+        // We look for 'Window' nodes, which represent window functions (e.g., OVER clauses)
+        case w @ Window(windowExprs, partitionSpec, orderSpec, child, _) =>
+          val childHasProv = hasProv(child, provenanceColName)
+
+          if (childHasProv) {
+            val provAttr = getProvAttr(child, provenanceColName)
+            val rawWindowColName = s"${provenanceColName}_raw_window"
+
+            // We filter out any existing provenance expressions from the window expressions to avoid duplicates
+            val userWindowExprs = windowExprs.filter {
+              case Alias(_, name)  => name != provenanceColName && name != rawWindowColName
+              case attr: Attribute => attr.name != provenanceColName && attr.name != rawWindowColName
+              case _               => true
+            }
+
+            // We create a new window expression for the provenance column using the current child provenance attribute
+            val baseAggExpr = provenanceBuilder.windowRaw(provAttr)
+            val largestFrame = widestSpecifiedWindowFrame(userWindowExprs)
+              .getOrElse(
+                SpecifiedWindowFrame(
+                  RowFrame,
+                  UnboundedPreceding,
+                  UnboundedFollowing
+                )
+              )
+            // We create a new window specification for the provenance column using the same partition and 
+            //order specifications as the user-defined window expressions
+            val windowSpec = WindowSpecDefinition(
+              partitionSpec,
+              orderSpec,
+              largestFrame
+            )
+
+            val windowProvExpr = WindowExpression(baseAggExpr, windowSpec)
+
+            // Rebuild raw window provenance from the current child provenance
+            // attribute to avoid stale exprIds in nested window rewrites.
+            val rawWindowTag = Alias(windowProvExpr, provenanceColName)()
+
+            val windowProv = w.copy(windowExpressions = userWindowExprs :+ rawWindowTag)
+
+            Project(
+              windowProv.output.filter(_.name != provenanceColName) :+ Alias(
+                provenanceBuilder.windowFinalize(rawWindowTag.toAttribute),
+                provenanceColName
+              )(),
+              windowProv
+            )
+          } else {
+            w
+          }
       }
     }
   }

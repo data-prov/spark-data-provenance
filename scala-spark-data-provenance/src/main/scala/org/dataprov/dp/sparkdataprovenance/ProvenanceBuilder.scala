@@ -53,6 +53,14 @@ trait AggregateProvenanceOperation {
   def aggregate(attr: Attribute): Expression
 }
 
+trait WindowRawProvenanceOperation {
+  def windowRaw(attr: Attribute): Expression
+}
+
+trait WindowFinalizeProvenanceOperation {
+  def windowFinalize(attr: Attribute): Expression
+}
+
 // Encapsulates how provenance values are represented and combined for joins, distinct
 // and group by operations. This trait allows users to customize the representation of
 // provenance information, e.g. by using structured types instead of strings
@@ -61,7 +69,9 @@ trait ProvenanceBuilder
     with SingleProvenanceOperation
     with JoinProvenanceOperation
     with DistinctProvenanceOperation
-    with AggregateProvenanceOperation
+  with AggregateProvenanceOperation
+  with WindowRawProvenanceOperation
+  with WindowFinalizeProvenanceOperation
 
 // Helper case class to specify overrides when building a new ProvenanceBuilder from a base.
 object ProvenanceBuilder {
@@ -90,6 +100,10 @@ object ProvenanceBuilder {
       distinctFn(attr)
     override def aggregate(attr: Attribute): Expression =
       aggregateFn(attr)
+    override def windowRaw(attr: Attribute): Expression =
+      aggregateFn(attr)
+    override def windowFinalize(attr: Attribute): Expression =
+      attr
   }
 
   // Build from a base builder and override only the capabilities you need.
@@ -191,6 +205,24 @@ object DisplayStringProvenanceBuilder extends ProvenanceBuilder {
       joinedArray
     )
   }
+
+  override def windowRaw(attr: Attribute): Expression =
+    AggregateExpression(
+      CollectSet(Cast(attr, StringType)),
+      Complete,
+      isDistinct = false
+    )
+
+  override def windowFinalize(attr: Attribute): Expression = {
+    val joinedArray = ConcatWs(Seq(Literal(aggregateOperator), attr))
+    val withBraces = Concat(Seq(Literal("{"), joinedArray, Literal("}")))
+
+    If(
+      GreaterThan(Size(attr), Literal(1)),
+      withBraces,
+      joinedArray
+    )
+  }
 }
 
 // Boolean builder: provenance is represented as boolean expressions
@@ -228,13 +260,28 @@ object BooleanProvenanceBuilder extends ProvenanceBuilder {
   override def distinct(attr: Attribute): Expression = anyTrue(attr)
 
   override def aggregate(attr: Attribute): Expression = anyTrue(attr)
+
+  override def windowRaw(attr: Attribute): Expression =
+    AggregateExpression(
+      Max(Cast(toBool(attr), IntegerType)),
+      Complete,
+      isDistinct = false
+    )
+
+  override def windowFinalize(attr: Attribute): Expression =
+    Coalesce(
+      Seq(
+        GreaterThan(Cast(attr, IntegerType), Literal(0)),
+        Literal(false)
+      )
+    )
 }
 
 // Semi Why-provenance builder: explicit alias over witness-set semantics.
 // The provenance is represented as array<string>.
 // This is useful when consumers prefer structured provenance tags over display strings.
 // The exact result will be preserved for single, join and aggregate operations, but distinct
-//will not distinguish between multiple rows contributing to the same output row,
+// will not distinguish between multiple rows contributing to the same output row,
 object SemiWhyProvenanceBuilder extends ProvenanceBuilder {
   private val arrayStringType = ArrayType(StringType, containsNull = true)
 
@@ -292,6 +339,16 @@ object SemiWhyProvenanceBuilder extends ProvenanceBuilder {
     )
     ArrayDistinct(Flatten(collectListExpr))
   }
+
+  override def windowRaw(attr: Attribute): Expression =
+    AggregateExpression(
+      CollectList(toArray(attr)),
+      Complete,
+      isDistinct = false
+    )
+
+  override def windowFinalize(attr: Attribute): Expression =
+    ArrayDistinct(Flatten(attr))
 }
 
 // Full Why-provenance builder: tracks conjunctions and choices explicitly.
@@ -337,7 +394,7 @@ object FullWhyProvenanceBuilder extends ProvenanceBuilder {
         )
     }
   }
-  // For JOIN, we combine factors from left and right with AND, and merge alternatives within each factor with OR.
+  // For JOIN, we combine factors from left and right, and merge alternatives within each factor with union.
   private def mergeAlternativesByPosition(
       left: Expression,
       right: Expression
@@ -351,7 +408,7 @@ object FullWhyProvenanceBuilder extends ProvenanceBuilder {
     ZipWith(
       left,
       right,
-      // If both sides have alternatives, merge them with OR (union).
+      // If both sides have alternatives, merge them with union.
       // If only one side has alternatives, take those.
       LambdaFunction(
         If(
@@ -427,26 +484,15 @@ object FullWhyProvenanceBuilder extends ProvenanceBuilder {
 
     ArrayDistinct(Flatten(collectedFactors))
   }
+
+  override def windowRaw(attr: Attribute): Expression =
+    AggregateExpression(
+      CollectSet(normalizeToChoiceFactors(attr)),
+      Complete,
+      isDistinct = false
+    )
+
+  override def windowFinalize(attr: Attribute): Expression =
+    ArrayDistinct(Flatten(attr))
 }
 
-// The aggregate and distinct will not distinguish between multiple rows contributing to the same output row,
-// but the join will still combine left and right provenance tags. This is a more lightweight representation
-// that may be sufficient for some use cases.
-object LightWhyProvenanceBuilder extends ProvenanceBuilder {
-  override val provType: DataType = SemiWhyProvenanceBuilder.provType
-
-  override def single(attr: Attribute): Expression =
-    SemiWhyProvenanceBuilder.single(attr)
-
-  override def join(
-      left: Attribute,
-      right: Attribute
-  ): Expression =
-    SemiWhyProvenanceBuilder.join(left, right)
-
-  override def distinct(attr: Attribute): Expression =
-    SemiWhyProvenanceBuilder.distinct(attr)
-
-  override def aggregate(attr: Attribute): Expression =
-    SemiWhyProvenanceBuilder.distinct(attr)
-}
