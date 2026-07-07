@@ -9,31 +9,37 @@ import org.apache.spark.sql.catalyst.expressions.CurrentRow
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.expressions.Literal
 import org.apache.spark.sql.catalyst.expressions.NamedExpression
+import org.apache.spark.sql.catalyst.expressions.RowFrame
 import org.apache.spark.sql.catalyst.expressions.SortOrder
+import org.apache.spark.sql.catalyst.expressions.SpecifiedWindowFrame
 import org.apache.spark.sql.catalyst.expressions.UnaryMinus
+import org.apache.spark.sql.catalyst.expressions.UnboundedFollowing
+import org.apache.spark.sql.catalyst.expressions.UnboundedPreceding
+import org.apache.spark.sql.catalyst.expressions.WindowExpression
+import org.apache.spark.sql.catalyst.expressions.WindowSpecDefinition
 import org.apache.spark.sql.catalyst.plans.Cross
+import org.apache.spark.sql.catalyst.plans.LeftAnti
+import org.apache.spark.sql.catalyst.plans.LeftSemi
 import org.apache.spark.sql.catalyst.plans.logical.Aggregate
 import org.apache.spark.sql.catalyst.plans.logical.Deduplicate
 import org.apache.spark.sql.catalyst.plans.logical.Distinct
+import org.apache.spark.sql.catalyst.plans.logical.Except
 import org.apache.spark.sql.catalyst.plans.logical.Filter
+import org.apache.spark.sql.catalyst.plans.logical.Intersect
 import org.apache.spark.sql.catalyst.plans.logical.Join
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlanIntegrity
 import org.apache.spark.sql.catalyst.plans.logical.Project
 import org.apache.spark.sql.catalyst.plans.logical.Sort
+import org.apache.spark.sql.catalyst.plans.logical.Union
 import org.apache.spark.sql.catalyst.plans.logical.Window
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
-import org.dataprov.dp.sparkdataprovenance.ProvenanceApi._
-import org.apache.spark.sql.catalyst.expressions.UnboundedPreceding
-import org.apache.spark.sql.catalyst.expressions.UnboundedFollowing
-import org.apache.spark.sql.catalyst.expressions.{WindowExpression, WindowSpecDefinition, SpecifiedWindowFrame, RowFrame}
-import org.apache.spark.sql.catalyst.plans.logical.Union
 import org.apache.spark.sql.types.ArrayType
 import org.apache.spark.sql.types.BooleanType
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.types.StringType
-import org.apache.spark.sql.catalyst.plans.logical.Intersect
+import org.dataprov.dp.sparkdataprovenance.ProvenanceApi._
 
 case class LogicalPlanWithProvenance(
     spark: SparkSession,
@@ -57,27 +63,34 @@ case class LogicalPlanWithProvenance(
     TreeNodeTag[Boolean]("provenance_processed")
 
   // Helper function to extract the numeric value from a boundary expression
-  private def boundaryValue(boundary: Expression): Option[Long] = boundary match {
-    case UnboundedPreceding             => Some(Long.MinValue)
-    case UnboundedFollowing             => Some(Long.MaxValue)
-    case CurrentRow                     => Some(0L)
-    case UnaryMinus(Literal(value: Byte, _), _)  => Some(-value.toLong)
-    case UnaryMinus(Literal(value: Short, _), _) => Some(-value.toLong)
-    case UnaryMinus(Literal(value: Int, _), _)   => Some(-value.toLong)
-    case UnaryMinus(Literal(value: Long, _), _)  => Some(-value)
-    case Literal(value: Byte, _)        => Some(value.toLong)
-    case Literal(value: Short, _)       => Some(value.toLong)
-    case Literal(value: Int, _)         => Some(value.toLong)
-    case Literal(value: Long, _)        => Some(value)
-    case _                              => None
-  }
+  private def boundaryValue(boundary: Expression): Option[Long] =
+    boundary match {
+      case UnboundedPreceding                      => Some(Long.MinValue)
+      case UnboundedFollowing                      => Some(Long.MaxValue)
+      case CurrentRow                              => Some(0L)
+      case UnaryMinus(Literal(value: Byte, _), _)  => Some(-value.toLong)
+      case UnaryMinus(Literal(value: Short, _), _) => Some(-value.toLong)
+      case UnaryMinus(Literal(value: Int, _), _)   => Some(-value.toLong)
+      case UnaryMinus(Literal(value: Long, _), _)  => Some(-value)
+      case Literal(value: Byte, _)                 => Some(value.toLong)
+      case Literal(value: Short, _)                => Some(value.toLong)
+      case Literal(value: Int, _)                  => Some(value.toLong)
+      case Literal(value: Long, _)                 => Some(value)
+      case _                                       => None
+    }
 
   // Helper function to find the widest specified window frame among a sequence of window expressions
   // It returns an Option[SpecifiedWindowFrame] that represents the widest frame found
-  private def widestSpecifiedWindowFrame(windowExprs: Seq[NamedExpression]): Option[SpecifiedWindowFrame] = {
+  private def widestSpecifiedWindowFrame(
+      windowExprs: Seq[NamedExpression]
+  ): Option[SpecifiedWindowFrame] = {
     // Collect all specified window frames from the window expressions
     val frames = windowExprs.flatMap(_.collect {
-      case WindowExpression(_, WindowSpecDefinition(_, _, frame: SpecifiedWindowFrame)) => frame
+      case WindowExpression(
+            _,
+            WindowSpecDefinition(_, _, frame: SpecifiedWindowFrame)
+          ) =>
+        frame
     })
     // Find the widest frame by comparing the lower and upper boundaries
     frames.headOption.map { firstFrame =>
@@ -106,10 +119,10 @@ case class LogicalPlanWithProvenance(
   // provide a neutral non-null provenance value per type.
   private def unionMissingProvenanceValue(dataType: DataType): Expression =
     dataType match {
-      case StringType => Literal("")
-      case BooleanType => Literal(false)
+      case StringType           => Literal("")
+      case BooleanType          => Literal(false)
       case arrayType: ArrayType => Literal.create(Seq.empty, arrayType)
-      case _ => Literal.create(null, dataType)
+      case _                    => Literal.create(null, dataType)
     }
 
   private def normalizeUnionChildWithProvenance(
@@ -172,7 +185,7 @@ case class LogicalPlanWithProvenance(
             case _               => false
           }
 
-          // We filter the non-provenance expressions to keep only those that reference 
+          // We filter the non-provenance expressions to keep only those that reference
           // columns from the child output
           val validNonProvExprs = nonProvExprs.filter(expr =>
             expr.references.subsetOf(child.outputSet)
@@ -187,19 +200,19 @@ case class LogicalPlanWithProvenance(
             // each get a distinct ExprId — required for correct self-join provenance
             // tracking (without this, both sides of the join share the same ExprId and
             // Spark resolves both references to the same row value).
-            val provExpr = provExprs.collectFirst {
-              case expr if expr.references.subsetOf(child.outputSet) => expr
-            }.getOrElse(Alias(childProvAttr, provenanceColName)())
+            val provExpr = provExprs
+              .collectFirst {
+                case expr if expr.references.subsetOf(child.outputSet) => expr
+              }
+              .getOrElse(Alias(childProvAttr, provenanceColName)())
             p.copy(projectList = validNonProvExprs :+ provExpr, child = child)
-          } 
-          
-          else if (validNonProvExprs.size != nonProvExprs.size) {
-            // If some expressions were removed because they reference columns that are no longer present 
+          } else if (validNonProvExprs.size != nonProvExprs.size) {
+            // If some expressions were removed because they reference columns that are no longer present
             // in the child output, we need to update the project list
             p.copy(projectList = validNonProvExprs, child = child)
           } else {
             p
-          } 
+          }
 
         // We look for 'Filter' nodes, which represent WHERE statements
         case f @ Filter(_, _) =>
@@ -226,7 +239,7 @@ case class LogicalPlanWithProvenance(
           }
 
         // We look for 'Join' nodes, which represent JOIN statements
-        case j @ Join(left, right, joinType, condition, _) =>
+        case j @ Join(left, right, joinType, condition, hint) =>
           // We check if the left and right children have the provenance column
           // and if the join itself already has it
           val leftHasProv = hasProv(left, provenanceColName)
@@ -238,7 +251,9 @@ case class LogicalPlanWithProvenance(
           val isProcessed = j.getTagValue(PROCESSED_TAG).contains(true)
 
           if (
-            !isProcessed && (condition.isDefined || joinType == Cross) && (leftHasProv || rightHasProv)
+            !isProcessed && (condition.isDefined || joinType == Cross) &&
+            (leftHasProv || rightHasProv) &&
+            (joinType != LeftSemi && joinType != LeftAnti)
           ) {
             // We mark the join as processed to avoid infinite loops
             j.setTagValue(PROCESSED_TAG, true)
@@ -278,10 +293,89 @@ case class LogicalPlanWithProvenance(
               )()
               Project(cleanedOutput :+ combinedTag, j)
             }
+          } else if (!isProcessed && joinType == LeftSemi) {
+            if (condition.isDefined) {
+
+              if (rightHasProv) {
+                val rightProvAttr = getProvAttr(right, provenanceColName)
+                val rightKeys = condition
+                  .map(_.references.intersect(right.outputSet).toSeq)
+                  .getOrElse(Seq.empty)
+
+                // The right side of the join is aggregated to produce a single provenance tag
+                // for each unique combination of join keys
+                val rightDistinctExpr = Alias(
+                  provenanceBuilder.distinct(rightProvAttr),
+                  provenanceColName
+                )()
+                val aggregatedRight =
+                  Aggregate(rightKeys, rightKeys :+ rightDistinctExpr, right)
+
+                // We create a new Inner Join between the left side and the aggregated right side
+                val innerJoin = Join(
+                  left,
+                  aggregatedRight,
+                  org.apache.spark.sql.catalyst.plans.Inner,
+                  condition,
+                  hint
+                )
+                innerJoin.setTagValue(PROCESSED_TAG, true)
+
+                val cleanedLeftOutput =
+                  left.output.filter(_.name != provenanceColName)
+                val rightAggAttr = rightDistinctExpr.toAttribute
+
+                // We create a combined provenance tag based on whether the left side has provenance or not
+                val combinedTag = if (leftHasProv) {
+                  val leftProvAttr = getProvAttr(left, provenanceColName)
+                  Alias(
+                    provenanceBuilder.join(leftProvAttr, rightAggAttr),
+                    provenanceColName
+                  )()
+                } else {
+                  Alias(
+                    provenanceBuilder.single(rightAggAttr),
+                    provenanceColName
+                  )()
+                }
+
+                // The left child becomes a Project that contains the left data AND the combined tag
+                val leftNew =
+                  Project(cleanedLeftOutput :+ combinedTag, innerJoin)
+
+                // We reconstruct the original LeftSemi join at the top level,
+                // but now with the left side containing the combined provenance tag
+                val topSemiJoin = j.copy(left = leftNew, right = right)
+                topSemiJoin.setTagValue(PROCESSED_TAG, true)
+
+                topSemiJoin
+              } else {
+                // If the right side does not have provenance, we only need to clean the left output
+                val cleanedLeftOutput =
+                  left.output.filter(_.name != provenanceColName)
+                if (leftHasProv) {
+                  val leftProvAttr = getProvAttr(left, provenanceColName)
+                  val newTag = Alias(
+                    provenanceBuilder.single(leftProvAttr),
+                    provenanceColName
+                  )()
+                  val leftNew = Project(cleanedLeftOutput :+ newTag, left)
+
+                  val topSemiJoin = j.copy(left = leftNew, right = right)
+                  topSemiJoin.setTagValue(PROCESSED_TAG, true)
+                  topSemiJoin
+                } else {
+                  j
+                }
+              }
+            } else {
+              j
+            }
           } else {
             j
           }
 
+        // We look for 'Intersect' nodes, which represent INTERSECT statements
         case i @ Intersect(left, right, isAll) =>
           // We check if the left and right children have the provenance column
           val leftHasProv = hasProv(left, provenanceColName)
@@ -298,7 +392,10 @@ case class LogicalPlanWithProvenance(
 
             val combinedTag = Alias(intersectLogicExpr, provenanceColName)()
 
-            Project(i.output.filter(_.name != provenanceColName) :+ combinedTag, i)
+            Project(
+              i.output.filter(_.name != provenanceColName) :+ combinedTag,
+              i
+            )
           } else {
             i
           }
@@ -331,10 +428,10 @@ case class LogicalPlanWithProvenance(
           childrenWithProv.headOption match {
             case None => u
             case Some(firstProvChild) =>
-              val targetProvType = getProvAttr(firstProvChild, provenanceColName).dataType
-              val hasChildrenWithoutProv = children.exists(
-                child => !hasProv(child, provenanceColName)
-              )
+              val targetProvType =
+                getProvAttr(firstProvChild, provenanceColName).dataType
+              val hasChildrenWithoutProv =
+                children.exists(child => !hasProv(child, provenanceColName))
 
               val newChildren = children.map { child =>
                 if (hasProv(child, provenanceColName)) {
@@ -395,7 +492,7 @@ case class LogicalPlanWithProvenance(
 
           // We ensure the child is tagged
           val childHasProv = hasProv(child, provenanceColName)
-          
+
           if (childHasProv) {
             val provAttr = getProvAttr(child, provenanceColName)
 
@@ -435,9 +532,11 @@ case class LogicalPlanWithProvenance(
 
             // We filter out any existing provenance expressions from the window expressions to avoid duplicates
             val userWindowExprs = windowExprs.filter {
-              case Alias(_, name)  => name != provenanceColName && name != rawWindowColName
-              case attr: Attribute => attr.name != provenanceColName && attr.name != rawWindowColName
-              case _               => true
+              case Alias(_, name) =>
+                name != provenanceColName && name != rawWindowColName
+              case attr: Attribute =>
+                attr.name != provenanceColName && attr.name != rawWindowColName
+              case _ => true
             }
 
             // We create a new window expression for the provenance column using the current child provenance attribute
@@ -450,8 +549,8 @@ case class LogicalPlanWithProvenance(
                   UnboundedFollowing
                 )
               )
-            // We create a new window specification for the provenance column using the same partition and 
-            //order specifications as the user-defined window expressions
+            // We create a new window specification for the provenance column using the same partition and
+            // order specifications as the user-defined window expressions
             val windowSpec = WindowSpecDefinition(
               partitionSpec,
               orderSpec,
@@ -464,7 +563,8 @@ case class LogicalPlanWithProvenance(
             // attribute to avoid stale exprIds in nested window rewrites.
             val rawWindowTag = Alias(windowProvExpr, provenanceColName)()
 
-            val windowProv = w.copy(windowExpressions = userWindowExprs :+ rawWindowTag)
+            val windowProv =
+              w.copy(windowExpressions = userWindowExprs :+ rawWindowTag)
 
             Project(
               windowProv.output.filter(_.name != provenanceColName) :+ Alias(
@@ -475,6 +575,24 @@ case class LogicalPlanWithProvenance(
             )
           } else {
             w
+          }
+
+        // We look for 'Except' nodes, which represent EXCEPT statements (e.g., df1.except(df2))
+        case e @ Except(left, right, isAll) =>
+          val leftHasProv = hasProv(left, provenanceColName)
+          val cleanedOutput = e.output.filter(_.name != provenanceColName)
+          if (leftHasProv) {
+            val leftProvAttr = getProvAttr(left, provenanceColName)
+
+            val exceptLogicExpr = provenanceBuilder.single(
+              leftProvAttr
+            )
+
+            val combinedTag = Alias(exceptLogicExpr, provenanceColName)()
+
+            Project(cleanedOutput :+ combinedTag, e)
+          } else {
+            e
           }
       }
     }
