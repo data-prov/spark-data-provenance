@@ -13,6 +13,7 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.expressions.If
 import org.apache.spark.sql.catalyst.expressions.IsNull
 import org.apache.spark.sql.catalyst.expressions.Literal
+import org.apache.spark.sql.catalyst.expressions.MonotonicallyIncreasingID
 import org.apache.spark.sql.catalyst.expressions.NamedExpression
 import org.apache.spark.sql.catalyst.expressions.RowFrame
 import org.apache.spark.sql.catalyst.expressions.SortOrder
@@ -313,22 +314,25 @@ case class LogicalPlanWithProvenance(
               if (rightHasProv) {
                 val rightProvAttr = getProvAttr(right, provenanceColName)
 
+                // We create a new physical row ID for the left side to ensure uniqueness
                 val rowIdExpr = Alias(
-                  org.apache.spark.sql.catalyst.expressions
-                    .MonotonicallyIncreasingID(),
+                  MonotonicallyIncreasingID(),
                   s"${provenanceColName}_physical_row_id"
                 )()
                 val leftWithRowId = Project(left.output :+ rowIdExpr, left)
 
+                // We create an Inner Join between the left and right children to get the matching rows
                 val innerJoin =
                   Join(leftWithRowId, right, Inner, condition, hint)
                 innerJoin.setTagValue(PROCESSED_TAG, true)
 
+                // We elect a unique witness from the right by grouping by ALL the columns of the left.
                 val rightWitnessExpr = Alias(
                   provenanceBuilder.distinct(rightProvAttr),
                   s"${provenanceColName}_right_witness"
                 )()
 
+                // We group by all the columns of the left side, including the physical row ID
                 val groupingKeys = leftWithRowId.output
                 val aggregatedLeft = Aggregate(
                   groupingKeys,
@@ -336,11 +340,13 @@ case class LogicalPlanWithProvenance(
                   innerJoin
                 )
 
-                // Le reste reste propre : left.output ne contenant pas l'ID physique, le Project final le supprime automatiquement
+                // The resulting left output should not include the provenance column,
+                // as we will add a new combined tag
                 val cleanedLeftOutput =
                   left.output.filter(_.name != provenanceColName)
                 val rightWitnessAttr = rightWitnessExpr.toAttribute
 
+                // We create a combined provenance tag based on whether the left side has provenance or not
                 val combinedTag = if (leftHasProv) {
                   val leftProvAttr = getProvAttr(left, provenanceColName)
                   Alias(
@@ -353,15 +359,17 @@ case class LogicalPlanWithProvenance(
                     provenanceColName
                   )()
                 }
-
+                // The left child becomes a clean Project containing the final combined tag
                 val leftNew =
                   Project(cleanedLeftOutput :+ combinedTag, aggregatedLeft)
 
+                // We reconstruct the original LeftSemi join at the TOP to satisfy Spark's Cast
                 val topSemiJoin = j.copy(left = leftNew, right = right)
                 topSemiJoin.setTagValue(PROCESSED_TAG, true)
 
                 topSemiJoin
               } else {
+                // If the right side does not have provenance, we can still propagate the left provenance
                 val cleanedLeftOutput =
                   left.output.filter(_.name != provenanceColName)
                 if (leftHasProv) {
@@ -382,62 +390,7 @@ case class LogicalPlanWithProvenance(
             } else {
               j
             }
-          }
-
-          // else if(!isProcessed && joinType == LeftSemi) {
-          //   if (condition.isDefined) {
-
-          //     if (rightHasProv) {
-          //       val rightProvAttr = getProvAttr(right, provenanceColName)
-
-          //       // First we create an Inner Join between the left and right children to get the matching rows
-          //       val innerJoin = Join(left, right, Inner, condition, hint)
-          //       innerJoin.setTagValue(PROCESSED_TAG, true)
-
-          //       // We elect a unique witness from the right by grouping by ALL the columns of the left.
-          //       // This ensures that no left row will be duplicated in the end.
-          //       val rightWitnessExpr = Alias(provenanceBuilder.distinct(rightProvAttr), s"${provenanceColName}_right_witness")()
-          //       val groupingKeys = left.output
-          //       val aggregatedLeft = Aggregate(groupingKeys, groupingKeys :+ rightWitnessExpr, innerJoin)
-
-          //       val cleanedLeftOutput = left.output.filter(_.name != provenanceColName)
-          //       val rightWitnessAttr = rightWitnessExpr.toAttribute
-
-          //       // We create a combined provenance tag based on whether the left side has provenance or not
-          //       val combinedTag = if (leftHasProv) {
-          //         val leftProvAttr = getProvAttr(left, provenanceColName)
-          //         Alias(provenanceBuilder.join(leftProvAttr, rightWitnessAttr), provenanceColName)()
-          //       } else {
-          //         Alias(provenanceBuilder.single(rightWitnessAttr), provenanceColName)()
-          //       }
-
-          //       // The left child becomes a clean Project containing the final combined tag
-          //       val leftNew = Project(cleanedLeftOutput :+ combinedTag, aggregatedLeft)
-
-          //       // We reconstruct the original LeftSemi join at the TOP to satisfy Spark's Cast
-          //       val topSemiJoin = j.copy(left = leftNew, right = right)
-          //       topSemiJoin.setTagValue(PROCESSED_TAG, true)
-
-          //       topSemiJoin
-          //     } else {
-          //       val cleanedLeftOutput = left.output.filter(_.name != provenanceColName)
-          //       if (leftHasProv) {
-          //         val leftProvAttr = getProvAttr(left, provenanceColName)
-          //         val newTag = Alias(provenanceBuilder.single(leftProvAttr), provenanceColName)()
-          //         val leftNew = Project(cleanedLeftOutput :+ newTag, left)
-
-          //         val topSemiJoin = j.copy(left = leftNew, right = right)
-          //         topSemiJoin.setTagValue(PROCESSED_TAG, true)
-          //         topSemiJoin
-          //       } else {
-          //         j
-          //       }
-          //     }
-          //   } else {
-          //     j
-          //   }
-          // }
-          else {
+          } else {
             j
           }
 
