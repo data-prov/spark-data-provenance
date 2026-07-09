@@ -1,10 +1,14 @@
 package org.dataprov.dp.sparkdataprovenance
 
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, Complete, Max, Min, MaxBy, MinBy}
 import org.apache.spark.sql.catalyst.expressions.Alias
+import org.apache.spark.sql.catalyst.expressions.ArrayDistinct
 import org.apache.spark.sql.catalyst.expressions.Ascending
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.expressions.Cast
+import org.apache.spark.sql.catalyst.expressions.Concat
+import org.apache.spark.sql.catalyst.expressions.CreateArray
 import org.apache.spark.sql.catalyst.expressions.CurrentRow
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.expressions.Literal
@@ -25,7 +29,7 @@ import org.apache.spark.sql.catalyst.plans.logical.Deduplicate
 import org.apache.spark.sql.catalyst.plans.logical.Distinct
 import org.apache.spark.sql.catalyst.plans.logical.Except
 import org.apache.spark.sql.catalyst.plans.logical.Filter
-import org.apache.spark.sql.catalyst.plans.logical.Intersect
+// import org.apache.spark.sql.catalyst.plans.logical.Intersect
 import org.apache.spark.sql.catalyst.plans.logical.Join
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlanIntegrity
@@ -40,6 +44,11 @@ import org.apache.spark.sql.types.BooleanType
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.types.StringType
 import org.dataprov.dp.sparkdataprovenance.ProvenanceApi._
+import org.apache.spark.sql.catalyst.plans.Inner
+import org.apache.spark.sql.catalyst.expressions.aggregate.First
+import org.apache.spark.sql.catalyst.expressions.aggregate.Last
+import org.apache.spark.sql.catalyst.expressions.IsNull
+import org.apache.spark.sql.catalyst.expressions.If
 
 case class LogicalPlanWithProvenance(
     spark: SparkSession,
@@ -293,74 +302,49 @@ case class LogicalPlanWithProvenance(
               )()
               Project(cleanedOutput :+ combinedTag, j)
             }
-          } else if (!isProcessed && joinType == LeftSemi) {
-            if (condition.isDefined) {
 
+          } else if(!isProcessed && joinType == LeftSemi) {
+            if (condition.isDefined) {
+              
               if (rightHasProv) {
                 val rightProvAttr = getProvAttr(right, provenanceColName)
-                val rightKeys = condition
-                  .map(_.references.intersect(right.outputSet).toSeq)
-                  .getOrElse(Seq.empty)
 
-                // The right side of the join is aggregated to produce a single provenance tag
-                // for each unique combination of join keys
-                val rightDistinctExpr = Alias(
-                  provenanceBuilder.distinct(rightProvAttr),
-                  provenanceColName
-                )()
-                val aggregatedRight =
-                  Aggregate(rightKeys, rightKeys :+ rightDistinctExpr, right)
+                // First we create an Inner Join between the left and right children to get the matching rows
+                val innerJoin = Join(left, right, Inner, condition, hint)
+                innerJoin.setTagValue(PROCESSED_TAG, true) 
 
-                // We create a new Inner Join between the left side and the aggregated right side
-                val innerJoin = Join(
-                  left,
-                  aggregatedRight,
-                  org.apache.spark.sql.catalyst.plans.Inner,
-                  condition,
-                  hint
-                )
-                innerJoin.setTagValue(PROCESSED_TAG, true)
+                // We elect a unique witness from the right by grouping by ALL the columns of the left.
+                // This ensures that no left row will be duplicated in the end.
+                val rightWitnessExpr = Alias(provenanceBuilder.distinct(rightProvAttr), s"${provenanceColName}_right_witness")()
+                val groupingKeys = left.output
+                val aggregatedLeft = Aggregate(groupingKeys, groupingKeys :+ rightWitnessExpr, innerJoin)
 
-                val cleanedLeftOutput =
-                  left.output.filter(_.name != provenanceColName)
-                val rightAggAttr = rightDistinctExpr.toAttribute
+                val cleanedLeftOutput = left.output.filter(_.name != provenanceColName)
+                val rightWitnessAttr = rightWitnessExpr.toAttribute
 
                 // We create a combined provenance tag based on whether the left side has provenance or not
                 val combinedTag = if (leftHasProv) {
                   val leftProvAttr = getProvAttr(left, provenanceColName)
-                  Alias(
-                    provenanceBuilder.join(leftProvAttr, rightAggAttr),
-                    provenanceColName
-                  )()
+                  Alias(provenanceBuilder.join(leftProvAttr, rightWitnessAttr), provenanceColName)()
                 } else {
-                  Alias(
-                    provenanceBuilder.single(rightAggAttr),
-                    provenanceColName
-                  )()
+                  Alias(provenanceBuilder.single(rightWitnessAttr), provenanceColName)()
                 }
 
-                // The left child becomes a Project that contains the left data AND the combined tag
-                val leftNew =
-                  Project(cleanedLeftOutput :+ combinedTag, innerJoin)
+                // The left child becomes a clean Project containing the final combined tag
+                val leftNew = Project(cleanedLeftOutput :+ combinedTag, aggregatedLeft)
 
-                // We reconstruct the original LeftSemi join at the top level,
-                // but now with the left side containing the combined provenance tag
+                // We reconstruct the original LeftSemi join at the TOP to satisfy Spark's Cast
                 val topSemiJoin = j.copy(left = leftNew, right = right)
                 topSemiJoin.setTagValue(PROCESSED_TAG, true)
-
+                
                 topSemiJoin
               } else {
-                // If the right side does not have provenance, we only need to clean the left output
-                val cleanedLeftOutput =
-                  left.output.filter(_.name != provenanceColName)
+                val cleanedLeftOutput = left.output.filter(_.name != provenanceColName)
                 if (leftHasProv) {
                   val leftProvAttr = getProvAttr(left, provenanceColName)
-                  val newTag = Alias(
-                    provenanceBuilder.single(leftProvAttr),
-                    provenanceColName
-                  )()
+                  val newTag = Alias(provenanceBuilder.single(leftProvAttr), provenanceColName)()
                   val leftNew = Project(cleanedLeftOutput :+ newTag, left)
-
+                  
                   val topSemiJoin = j.copy(left = leftNew, right = right)
                   topSemiJoin.setTagValue(PROCESSED_TAG, true)
                   topSemiJoin
@@ -375,45 +359,98 @@ case class LogicalPlanWithProvenance(
             j
           }
 
-        // We look for 'Intersect' nodes, which represent INTERSECT statements
-        case i @ Intersect(left, right, isAll) =>
-          // We check if the left and right children have the provenance column
-          val leftHasProv = hasProv(left, provenanceColName)
-          val rightHasProv = hasProv(right, provenanceColName)
-
-          if (leftHasProv && rightHasProv) {
-            val leftProvAttr = getProvAttr(left, provenanceColName)
-            val rightProvAttr = getProvAttr(right, provenanceColName)
-
-            val intersectLogicExpr = provenanceBuilder.join(
-              leftProvAttr,
-              rightProvAttr
-            )
-
-            val combinedTag = Alias(intersectLogicExpr, provenanceColName)()
-
-            Project(
-              i.output.filter(_.name != provenanceColName) :+ combinedTag,
-              i
-            )
-          } else {
-            i
-          }
-
         // We look for 'Aggregate' nodes, which represent GROUP BY statements
         case a @ Aggregate(groupingExprs, aggregateExprs, child, hint) =>
-          // We check if the child has the provenance column and if the aggregate itself already has it
           val childHasProv = hasProv(child, provenanceColName)
           val aggregateHasProv = hasProv(a, provenanceColName)
 
-          // If the child has the provenance column but the aggregate itself does not,
-          // add a provenance aggregation expression automatically.
-          // If aggregate already has provenance (e.g., from DISTINCT rewrite), keep it as-is.
           if (childHasProv && !aggregateHasProv) {
             val provAttr = getProvAttr(child, provenanceColName)
+            
+            // Extract all aggregate functions from the aggregate expressions
+            val allAggFunctions = aggregateExprs.flatMap { expr =>
+              expr.collect {
+                case ae: AggregateExpression => ae.aggregateFunction
+              }
+            }
 
+            // Verify if there are any generic aggregate functions (SUM, AVG, etc.) in the list
+            val hasGeneric = allAggFunctions.exists {
+              case _: Max => false
+              case _: Min => false
+              case _: First => false
+              case _: Last => false
+              case _      => true
+            }
+
+            val finalProvExpr = if (hasGeneric || allAggFunctions.isEmpty) {
+              // CASE 1: Fallback if there are SUM, AVG, etc. -> global collect_list
+              provenanceBuilder.aggregate(provAttr)
+            } else {
+              // CASE 2: Only MIN / MAX / FIRST / LAST (potentially multiple)
+              val maxFunctions = allAggFunctions.collect { case max: Max => max }
+              val minFunctions = allAggFunctions.collect { case min: Min => min }
+              val firstFunctions = allAggFunctions.collect { case f: First => f }
+              val lastFunctions = allAggFunctions.collect { case l: Last => l }
+
+              // Isolate unique target columns to avoid duplicate min_by
+              val uniqueMaxChildren = maxFunctions.map(_.child).distinct
+              val uniqueMinChildren = minFunctions.map(_.child).distinct
+
+              // Generate a MaxBy witness for each target column of the MAX
+              val maxByExprs = uniqueMaxChildren.map { child =>
+                AggregateExpression(MaxBy(provAttr, child), Complete, isDistinct = false)
+              }
+
+              // Generate a MinBy witness for each target column of the MIN
+              val minByExprs = uniqueMinChildren.map { child =>
+                AggregateExpression(MinBy(provAttr, child), Complete, isDistinct = false)
+              }
+
+              // Generate a First witness for each target column of the FIRST
+              val firstByExprs = firstFunctions.map { f =>
+                val conditionedProv = If(
+                  IsNull(f.child),
+                  Literal.create(null, provAttr.dataType),
+                  provAttr
+                )
+                AggregateExpression(First(conditionedProv, f.ignoreNulls), Complete, isDistinct = false)
+              }.distinct
+
+              // Generate a Last witness for each target column of the LAST
+              val lastByExprs = lastFunctions.map { l =>
+                val conditionedProv = If(
+                  IsNull(l.child),
+                  Literal.create(null, provAttr.dataType),
+                  provAttr
+                )
+                AggregateExpression(Last(conditionedProv, l.ignoreNulls), Complete, isDistinct = false)
+              }.distinct
+            
+              // Merge all witness generators
+              val allWitnessExprs = maxByExprs ++ minByExprs ++ firstByExprs ++ lastByExprs
+
+              if (allWitnessExprs.size == 1) {
+                // If there is only one target column with a single MIN or MAX
+                val singleExpr = allWitnessExprs.head
+                provAttr.dataType match {
+                  case StringType => CreateArray(Seq(singleExpr))
+                  case _          => singleExpr
+                }
+              } else {
+                // If there are multiple MIN, multiple MAX, or a mix
+                provAttr.dataType match {
+                  case StringType =>
+                    ArrayDistinct(CreateArray(allWitnessExprs))
+                  case _ =>
+                    ArrayDistinct(Concat(allWitnessExprs))
+                }
+              }
+            }
+
+            // 3. Injection of the final provenance tag
             val newAggregateExprs = aggregateExprs :+ Alias(
-              provenanceBuilder.aggregate(provAttr),
+              finalProvExpr,
               provenanceColName
             )()
 
@@ -421,7 +458,7 @@ case class LogicalPlanWithProvenance(
           } else {
             a
           }
-
+        
         case u @ Union(children, byName, allowMissingCol) =>
           // We check if any of the children have the provenance column
           val childrenWithProv = children.filter(hasProv(_, provenanceColName))
@@ -466,9 +503,7 @@ case class LogicalPlanWithProvenance(
             val groupingCols = child.output.filter(_.name != provenanceColName)
 
             val combinedTag = Alias(
-              provenanceBuilder.distinct(
-                childAttr
-              ),
+              provenanceBuilder.distinct(childAttr),
               provenanceColName
             )()
 
@@ -501,9 +536,7 @@ case class LogicalPlanWithProvenance(
               keysPresentInChild.filter(_.name != provenanceColName)
 
             val combinedTag = Alias(
-              provenanceBuilder.distinct(
-                provAttr
-              ),
+              provenanceBuilder.distinct(provAttr),
               provenanceColName
             )()
 
