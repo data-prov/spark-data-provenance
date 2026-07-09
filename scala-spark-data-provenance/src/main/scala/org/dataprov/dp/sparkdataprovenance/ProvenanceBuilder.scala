@@ -69,9 +69,9 @@ trait ProvenanceBuilder
     with SingleProvenanceOperation
     with JoinProvenanceOperation
     with DistinctProvenanceOperation
-  with AggregateProvenanceOperation
-  with WindowRawProvenanceOperation
-  with WindowFinalizeProvenanceOperation
+    with AggregateProvenanceOperation
+    with WindowRawProvenanceOperation
+    with WindowFinalizeProvenanceOperation
 
 // Helper case class to specify overrides when building a new ProvenanceBuilder from a base.
 object ProvenanceBuilder {
@@ -495,4 +495,3 @@ object FullWhyProvenanceBuilder extends ProvenanceBuilder {
   override def windowFinalize(attr: Attribute): Expression =
     ArrayDistinct(Flatten(attr))
 }
-
