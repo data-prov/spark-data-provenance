@@ -7,7 +7,6 @@ import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions.{col, concat, lit, when}
 
 import org.dataprov.dp.sparkdataprovenance.ProvenanceApi._
-import org.specs2.fp.ApplicativeSyntax
 
 class ProvenanceJoinTest extends AnyFunSpec with Matchers with SparkSessionTestWrapper with DataFrameComparer with ProvenanceModeTestUtils {
   import spark.implicits._
