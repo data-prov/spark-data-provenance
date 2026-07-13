@@ -7,6 +7,7 @@ import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions.{col, concat, lit, when}
 
 import org.dataprov.dp.sparkdataprovenance.ProvenanceApi._
+import org.specs2.fp.ApplicativeSyntax
 
 class ProvenanceJoinTest extends AnyFunSpec with Matchers with SparkSessionTestWrapper with DataFrameComparer with ProvenanceModeTestUtils {
   import spark.implicits._
@@ -229,7 +230,6 @@ class ProvenanceJoinTest extends AnyFunSpec with Matchers with SparkSessionTestW
 
         assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
     }
-    // TODO : test semi and anti joins once we decide on the expected provenance semantics for those operations
     
     itWithProvenanceEnabled("should preserve the provenance column and its values when performing a cross join") {
       val dfLeft = toyDfLeft
@@ -362,6 +362,57 @@ class ProvenanceJoinTest extends AnyFunSpec with Matchers with SparkSessionTestW
 
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
     }
+
+    itWithProvenanceEnabled("should preserve the provenance column and its values when performing a left semi join") {
+      val dfLeft = toyDfLeft
+      val dfRight = toyDfRight
+
+      val dfWithProvLeft = addProvenance(dfLeft, col("B"))
+      val dfWithProvRight = addProvenance(dfRight, col("D"))
+      
+      val dfWithProvJoin = dfWithProvLeft.join(dfWithProvRight, Seq("A"), "left_semi").select("A", "B", "C").orderBy("A", "B", "C")
+
+      val dfLeftSide = dfLeft.select("A", "B", "C").withColumn("leftProv", col("B").cast("string"))
+      val dfRightSide = dfRight.select("A", "D").withColumn("rightProv", col("D").cast("string"))
+      
+      val expected: DataFrame = dfLeftSide.join(dfRightSide.distinct(), Seq("A"), "inner")
+        .withColumn(defaultProvenanceColName, concat(lit("("), col("leftProv"), lit(" ⊗ "), col("rightProv"), lit(")")))
+        .drop("leftProv", "rightProv")
+        .select("A", "B", "C", defaultProvenanceColName)
+        .orderBy("A", "B", "C") 
+
+      assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
+    }
+
+    itWithProvenanceEnabled("should preserve the provenance column and its values when performing a left semi join with views") {
+      val dfLeft = toyDfLeft
+      val dfRight = toyDfRight
+
+      dfLeft.createOrReplaceTempView("left_view")
+      dfRight.createOrReplaceTempView("right_view")
+      addProvenance(spark, "left_view", col("B"))
+      addProvenance(spark, "right_view", col("D"))
+
+      val dfWithProvJoin = spark.sql(
+        s"""
+           |SELECT l.A, l.B, l.C
+           |FROM left_view l
+           |LEFT SEMI JOIN right_view r ON l.A = r.A
+           |ORDER BY l.A, l.B, l.C
+        """.stripMargin).orderBy("A", "B", "C")
+
+      val dfLeftSide = dfLeft.select("A", "B", "C").withColumn("leftProv", col("B").cast("string"))
+      val dfRightSide = dfRight.select("A", "D").withColumn("rightProv", col("D").cast("string"))
+      
+      val expected: DataFrame = dfLeftSide.join(dfRightSide.distinct(), Seq("A"), "inner")
+        .withColumn(defaultProvenanceColName, concat(lit("("), col("leftProv"), lit(" ⊗ "), col("rightProv"), lit(")")))
+        .drop("leftProv", "rightProv")
+        .select("A", "B", "C", defaultProvenanceColName)
+        .orderBy("A", "B", "C") 
+
+      assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvJoin)
+    }
+    
   }
 }
 
