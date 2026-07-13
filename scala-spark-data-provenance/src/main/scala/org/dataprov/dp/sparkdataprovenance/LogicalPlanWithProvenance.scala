@@ -2,6 +2,7 @@ package org.dataprov.dp.sparkdataprovenance
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.Alias
+import org.apache.spark.sql.catalyst.expressions.And
 import org.apache.spark.sql.catalyst.expressions.ArrayDistinct
 import org.apache.spark.sql.catalyst.expressions.Ascending
 import org.apache.spark.sql.catalyst.expressions.Attribute
@@ -9,6 +10,7 @@ import org.apache.spark.sql.catalyst.expressions.Cast
 import org.apache.spark.sql.catalyst.expressions.Concat
 import org.apache.spark.sql.catalyst.expressions.CreateArray
 import org.apache.spark.sql.catalyst.expressions.CurrentRow
+import org.apache.spark.sql.catalyst.expressions.EqualNullSafe
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.expressions.If
 import org.apache.spark.sql.catalyst.expressions.IsNull
@@ -40,7 +42,9 @@ import org.apache.spark.sql.catalyst.plans.logical.Deduplicate
 import org.apache.spark.sql.catalyst.plans.logical.Distinct
 import org.apache.spark.sql.catalyst.plans.logical.Except
 import org.apache.spark.sql.catalyst.plans.logical.Filter
+import org.apache.spark.sql.catalyst.plans.logical.Intersect
 import org.apache.spark.sql.catalyst.plans.logical.Join
+import org.apache.spark.sql.catalyst.plans.logical.JoinHint
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlanIntegrity
 import org.apache.spark.sql.catalyst.plans.logical.Project
@@ -392,6 +396,80 @@ case class LogicalPlanWithProvenance(
             }
           } else {
             j
+          }
+
+        // We look for 'Intersect' nodes, which represent INTERSECT statements
+        case i @ Intersect(left, right, isAll) if !isAll =>
+          val leftHasProv = hasProv(left, provenanceColName)
+          val rightHasProv = hasProv(right, provenanceColName)
+
+          if (leftHasProv || rightHasProv) {
+            // We need to rewrite the Intersect into an Inner Join to propagate provenance information
+            val leftProvAttr = left.output.filter(_.name != provenanceColName)
+            val rightProvAttr = right.output.filter(_.name != provenanceColName)
+
+            // We create a join condition based on the equality of all non-provenance columns from both sides
+            val joinCondition = leftProvAttr
+              .zip(rightProvAttr)
+              .map { case (l, r) =>
+                EqualNullSafe(l, r)
+              }
+              .reduceLeftOption(And)
+
+            // We create a new Join node with the join condition and the Inner join type
+            joinCondition match {
+              case Some(condition) =>
+                // We create an Inner Join between the left and right children based on the join condition
+                val innerJoin = Join(
+                  left,
+                  right,
+                  Inner,
+                  Some(condition),
+                  hint = JoinHint.NONE
+                )
+                innerJoin.setTagValue(PROCESSED_TAG, true)
+
+                // We create a combined provenance expression based on the presence of provenance in both sides
+                val joinLogicExpr = (leftHasProv, rightHasProv) match {
+                  case (true, true) =>
+                    provenanceBuilder.join(
+                      getProvAttr(left, provenanceColName),
+                      getProvAttr(right, provenanceColName)
+                    )
+                  case (true, false) => getProvAttr(left, provenanceColName)
+                  case (false, true) => getProvAttr(right, provenanceColName)
+                  // Normally, this case should not happen because we check that at least one side has provenance, but we include it for completeness
+                  case (false, false) =>
+                    throw new IllegalStateException(
+                      "At least one side must have provenance"
+                    )
+                }
+
+                // We create an alias for the combined provenance expression to give it the correct column name in the output
+                val combinedTag =
+                  Alias(joinLogicExpr, s"${provenanceColName}_intersect_tmp")()
+
+                // We create a Project node to include the combined provenance expression in the output of the Inner Join
+                val projectWithCombinedProv =
+                  Project(innerJoin.output :+ combinedTag, innerJoin)
+
+                // We create an Aggregate node to group by all non-provenance columns and aggregate the combined provenance expression into a single provenance tag
+                val groupingKeys = leftProvAttr
+                val finalTag = Alias(
+                  provenanceBuilder.aggregate(combinedTag.toAttribute),
+                  provenanceColName
+                )()
+
+                Aggregate(
+                  groupingKeys,
+                  groupingKeys :+ finalTag,
+                  projectWithCombinedProv
+                )
+
+              case None => i
+            }
+          } else {
+            i
           }
 
         // We look for 'Aggregate' nodes, which represent GROUP BY statements
