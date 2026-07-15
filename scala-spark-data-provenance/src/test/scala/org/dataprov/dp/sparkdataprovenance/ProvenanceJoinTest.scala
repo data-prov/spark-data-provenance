@@ -30,7 +30,6 @@ class ProvenanceJoinTest extends AnyFunSpec with Matchers with SparkSessionTestW
     assert(dfWithProv.columns.contains(provColName))
     // 2. The expected dataframe (including the provenance column) should be equal to the actual dataframe with provenance
     assertSmallDataFrameEquality(dfWithProv, dfExpected)
-
   }
 
   describe("Joining columns from DataFrames/views with provenance") {
