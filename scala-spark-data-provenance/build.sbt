@@ -37,7 +37,7 @@ developers := List(
 
 version := scala.io.Source.fromFile("VERSION").getLines.toList.head
 scalaVersion := "2.13.18"
-val sparkVersion = "4.1.1"
+val sparkVersion = "4.1.1" 
 
 crossScalaVersions := Seq("2.13.17", "2.13.18")
 
@@ -126,4 +126,25 @@ publishTo := {
   if (isSnapshot.value) Some("snapshots" at nexus + "content/repositories/snapshots")
   else Some("releases" at nexus + "service/local/staging/deploy/maven2")
 }
+
+// Fine configuration of the assembly for Databricks
+assembly / assemblyMergeStrategy := {
+    
+  case PathList("META-INF", xs @ _*) =>
+    xs map { _.toLowerCase } match {
+      case "manifest.mf" :: Nil | "index.list" :: Nil | "dependencies" :: Nil => MergeStrategy.discard
+      case ps if ps.last.endsWith(".sf") || ps.last.endsWith(".dsa") || ps.last.endsWith(".rsa") => MergeStrategy.discard
+      case _ => MergeStrategy.first
+    }
+    
+  case PathList(ps @ _*) if ps.last endsWith ".properties" => MergeStrategy.first
+  case x =>
+    val oldStrategy = (assembly / assemblyMergeStrategy).value
+    oldStrategy(x)
+}
+
+excludeDependencies ++= Seq(
+  ExclusionRule("com.google.guava", "guava")
+)
+
 
