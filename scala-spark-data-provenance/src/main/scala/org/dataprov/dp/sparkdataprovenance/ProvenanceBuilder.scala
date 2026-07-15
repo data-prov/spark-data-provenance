@@ -51,6 +51,7 @@ trait DistinctProvenanceOperation {
 
 trait AggregateProvenanceOperation {
   def aggregate(attr: Attribute): Expression
+  def formatWitnessArray(witnessArray: Expression): Expression
 }
 
 trait WindowRawProvenanceOperation {
@@ -89,7 +90,8 @@ object ProvenanceBuilder {
       singleFn: Attribute => Expression,
       joinFn: (Attribute, Attribute) => Expression,
       distinctFn: Attribute => Expression,
-      aggregateFn: Attribute => Expression
+      aggregateFn: Attribute => Expression,
+      formatWitnessArrayFn: Expression => Expression
   ): ProvenanceBuilder = new ProvenanceBuilder {
     override val provType: DataType = provTypeFn
     override def single(attr: Attribute): Expression =
@@ -100,6 +102,9 @@ object ProvenanceBuilder {
       distinctFn(attr)
     override def aggregate(attr: Attribute): Expression =
       aggregateFn(attr)
+
+    override def formatWitnessArray(witnessArray: Expression): Expression = 
+      formatWitnessArrayFn(witnessArray) 
     override def windowRaw(attr: Attribute): Expression =
       aggregateFn(attr)
     override def windowFinalize(attr: Attribute): Expression =
@@ -117,7 +122,8 @@ object ProvenanceBuilder {
       singleFn = overrides.singleFrom.getOrElse(base).single,
       joinFn = overrides.joinFrom.getOrElse(base).join,
       distinctFn = overrides.distinctFrom.getOrElse(base).distinct,
-      aggregateFn = overrides.aggregateFrom.getOrElse(base).aggregate
+      aggregateFn = overrides.aggregateFrom.getOrElse(base).aggregate,
+      formatWitnessArrayFn = overrides.aggregateFrom.getOrElse(base).formatWitnessArray
     )
 }
 
@@ -206,6 +212,18 @@ object DisplayStringProvenanceBuilder extends ProvenanceBuilder {
     )
   }
 
+  override def formatWitnessArray(witnessArray: Expression): Expression = {
+    val sep = Literal(aggregateOperator)
+    val joinedArray = ConcatWs(Seq(sep, witnessArray))
+    val withBraces = Concat(Seq(Literal("{"), joinedArray, Literal("}")))
+
+    If(
+      GreaterThan(Size(witnessArray), Literal(1)),
+      withBraces,
+      joinedArray
+    )
+  }
+
   override def windowRaw(attr: Attribute): Expression =
     AggregateExpression(
       CollectSet(Cast(attr, StringType)),
@@ -260,6 +278,10 @@ object BooleanProvenanceBuilder extends ProvenanceBuilder {
   override def distinct(attr: Attribute): Expression = anyTrue(attr)
 
   override def aggregate(attr: Attribute): Expression = anyTrue(attr)
+
+  override def formatWitnessArray(witnessArray: Expression): Expression = {
+    GreaterThan(Size(witnessArray), Literal(0))
+  }
 
   override def windowRaw(attr: Attribute): Expression =
     AggregateExpression(
@@ -338,6 +360,10 @@ object SemiWhyProvenanceBuilder extends ProvenanceBuilder {
       isDistinct = false
     )
     ArrayDistinct(Flatten(collectListExpr))
+  }
+
+  override def formatWitnessArray(witnessArray: Expression): Expression = {
+    witnessArray
   }
 
   override def windowRaw(attr: Attribute): Expression =
@@ -483,6 +509,10 @@ object FullWhyProvenanceBuilder extends ProvenanceBuilder {
     val collectedFactors = collectDistinctRows(attr)
 
     ArrayDistinct(Flatten(collectedFactors))
+  }
+
+  override def formatWitnessArray(witnessArray: Expression): Expression = {
+    CreateArray(Seq(witnessArray))
   }
 
   override def windowRaw(attr: Attribute): Expression =

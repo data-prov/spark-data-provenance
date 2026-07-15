@@ -563,10 +563,9 @@ case class LogicalPlanWithProvenance(
               }.distinct
 
               // Merge all witness generators
-              val allWitnessExprs =
-                maxByExprs ++ minByExprs ++ firstByExprs ++ lastByExprs
+              val allWitnessExprs = maxByExprs ++ minByExprs ++ firstByExprs ++ lastByExprs
 
-              if (allWitnessExprs.size == 1) {
+              val rawWitnessArray = if (allWitnessExprs.size == 1) {
                 // If there is only one target column with a single MIN or MAX
                 val singleExpr = allWitnessExprs.head
                 provAttr.dataType match {
@@ -577,11 +576,14 @@ case class LogicalPlanWithProvenance(
                 // If there are multiple MIN, multiple MAX, or a mix etc.,
                 // we need to combine them into a single array of witnesses
                 provAttr.dataType match {
-                  case StringType =>
-                    ArrayDistinct(CreateArray(allWitnessExprs))
-                  case _ =>
-                    ArrayDistinct(Concat(allWitnessExprs))
+                  case StringType => ArrayDistinct(CreateArray(allWitnessExprs))
+                  case _          => ArrayDistinct(Concat(allWitnessExprs))
                 }
+              }
+              // We format the final provenance expression based on the data type of the provenance attribute
+              provAttr.dataType match {
+                case StringType => provenanceBuilder.formatWitnessArray(rawWitnessArray)
+                case _          => rawWitnessArray
               }
             }
 
@@ -590,8 +592,8 @@ case class LogicalPlanWithProvenance(
               finalProvExpr,
               provenanceColName
             )()
-
             Aggregate(groupingExprs, newAggregateExprs, child, hint)
+
           } else {
             a
           }
