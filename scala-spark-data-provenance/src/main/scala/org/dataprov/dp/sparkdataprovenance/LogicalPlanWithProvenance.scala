@@ -233,7 +233,7 @@ case class LogicalPlanWithProvenance(
           }
 
         // We look for 'Filter' nodes, which represent WHERE statements
-        case f @ Filter(_, _) =>
+        case f @ Filter(condition, child) =>
           // Filtering does not require provenance-specific rewrites.
           // Keep user predicate unchanged, including rows with null provenance.
           f
