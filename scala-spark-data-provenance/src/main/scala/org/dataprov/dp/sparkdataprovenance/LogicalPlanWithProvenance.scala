@@ -749,7 +749,7 @@ case class LogicalPlanWithProvenance(
             w
           }
 
-        // We look for 'Except' nodes, which represent EXCEPT statements 
+        // We look for 'Except' nodes, which represent EXCEPT statements
         case e @ Except(left, right, isAll) =>
           val leftHasProv = hasProv(left, provenanceColName)
           val cleanedOutput = e.output.filter(_.name != provenanceColName)
