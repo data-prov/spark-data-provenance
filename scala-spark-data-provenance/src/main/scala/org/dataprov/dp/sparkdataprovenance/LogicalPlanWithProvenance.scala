@@ -563,7 +563,8 @@ case class LogicalPlanWithProvenance(
               }.distinct
 
               // Merge all witness generators
-              val allWitnessExprs = maxByExprs ++ minByExprs ++ firstByExprs ++ lastByExprs
+              val allWitnessExprs =
+                maxByExprs ++ minByExprs ++ firstByExprs ++ lastByExprs
 
               val rawWitnessArray = if (allWitnessExprs.size == 1) {
                 // If there is only one target column with a single MIN or MAX
@@ -582,8 +583,9 @@ case class LogicalPlanWithProvenance(
               }
               // We format the final provenance expression based on the data type of the provenance attribute
               provAttr.dataType match {
-                case StringType => provenanceBuilder.formatWitnessArray(rawWitnessArray)
-                case _          => rawWitnessArray
+                case StringType =>
+                  provenanceBuilder.formatWitnessArray(rawWitnessArray)
+                case _ => rawWitnessArray
               }
             }
 
@@ -629,7 +631,6 @@ case class LogicalPlanWithProvenance(
           }
 
         // We look for 'Distinct' nodes, which represent DISTINCT statements without specified keys
-        // (e.g., SELECT DISTINCT in SQL)
         case d @ Distinct(child) =>
           // We ensure the child is tagged
           val childHasProv = hasProv(child, provenanceColName)
@@ -658,7 +659,6 @@ case class LogicalPlanWithProvenance(
           }
 
         // We look for 'Deduplicate' nodes, which represent Distinct statements with specified keys
-        // (e.g., distinct or dropDuplicates in DataFrame API)
         case d @ Deduplicate(keys, child) =>
           // Keep only keys that are still available in the child output to avoid
           // analyzer failures when projection changed expression IDs upstream.
@@ -749,7 +749,7 @@ case class LogicalPlanWithProvenance(
             w
           }
 
-        // We look for 'Except' nodes, which represent EXCEPT statements (e.g., df1.except(df2))
+        // We look for 'Except' nodes, which represent EXCEPT statements 
         case e @ Except(left, right, isAll) =>
           val leftHasProv = hasProv(left, provenanceColName)
           val cleanedOutput = e.output.filter(_.name != provenanceColName)

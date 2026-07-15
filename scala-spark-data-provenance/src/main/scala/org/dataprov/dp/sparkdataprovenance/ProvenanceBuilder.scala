@@ -103,8 +103,8 @@ object ProvenanceBuilder {
     override def aggregate(attr: Attribute): Expression =
       aggregateFn(attr)
 
-    override def formatWitnessArray(witnessArray: Expression): Expression = 
-      formatWitnessArrayFn(witnessArray) 
+    override def formatWitnessArray(witnessArray: Expression): Expression =
+      formatWitnessArrayFn(witnessArray)
     override def windowRaw(attr: Attribute): Expression =
       aggregateFn(attr)
     override def windowFinalize(attr: Attribute): Expression =
@@ -123,7 +123,8 @@ object ProvenanceBuilder {
       joinFn = overrides.joinFrom.getOrElse(base).join,
       distinctFn = overrides.distinctFrom.getOrElse(base).distinct,
       aggregateFn = overrides.aggregateFrom.getOrElse(base).aggregate,
-      formatWitnessArrayFn = overrides.aggregateFrom.getOrElse(base).formatWitnessArray
+      formatWitnessArrayFn =
+        overrides.aggregateFrom.getOrElse(base).formatWitnessArray
     )
 }
 
