@@ -4,8 +4,7 @@ import com.github.mrpowers.spark.fast.tests.DataFrameComparer
 import org.scalatest.funspec.AnyFunSpec
 import org.scalatest.matchers.should.Matchers
 import org.apache.spark.sql.DataFrame
-import org.apache.spark.sql.functions.{col, max, min, sum, avg}
-
+import org.apache.spark.sql.functions._
 import org.dataprov.dp.sparkdataprovenance.ProvenanceApi._
 
 class ProvenanceAggregateTest extends AnyFunSpec with Matchers with SparkSessionTestWrapper with DataFrameComparer with ProvenanceModeTestUtils {
@@ -34,15 +33,25 @@ class ProvenanceAggregateTest extends AnyFunSpec with Matchers with SparkSession
       val dfWithProv = addProvenance(df, col("A"))
 
       val dfActual = dfWithProv
-        .groupBy("A")
-        .agg(sum("B").as("total_B"))
-        .orderBy("A")
+        .groupBy("B")
+        .agg(sum("C").as("total_B"))
+        .orderBy("B")
 
       val expected = df
-        .groupBy("A")
-        .agg(sum("B").as("total_B"))
-        .withColumn(defaultProvenanceColName, col("A").cast("string"))
-        .orderBy("A")
+        .groupBy("B")
+        .agg(
+          sum("C").as("total_B"),
+          collect_set("A").as("raw_set") 
+        )
+        .withColumn(defaultProvenanceColName, 
+          when(org.apache.spark.sql.functions.size(col("raw_set")).gt(lit(1)), 
+            concat(lit("{"), array_join(col("raw_set"), " ⊕ "), lit("}"))
+          ).otherwise(
+            col("raw_set").getItem(0)
+          )
+        )
+        .drop("raw_set") 
+        .orderBy("B")
 
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfActual)
     }
@@ -52,13 +61,23 @@ class ProvenanceAggregateTest extends AnyFunSpec with Matchers with SparkSession
       df.createOrReplaceTempView(viewName)
       addProvenance(spark, viewName, col("A"))
 
-      val dfActual = spark.sql(s"SELECT A, SUM(B) AS sum_B, MIN(C) AS min_C FROM $viewName GROUP BY A ORDER BY A")
+      val dfActual = spark.sql(s"SELECT B, SUM(C) AS total_C FROM $viewName GROUP BY B ORDER BY B")
 
       val expected = df
-        .groupBy("A")
-        .agg(sum("B").as("sum_B"), min("C").as("min_C"))
-        .withColumn(defaultProvenanceColName, col("A").cast("string"))
-        .orderBy("A")
+        .groupBy("B")
+        .agg(
+          sum("C").as("total_C"),
+          collect_set("A").as("raw_set") 
+        )
+        .withColumn(defaultProvenanceColName, 
+          when(org.apache.spark.sql.functions.size(col("raw_set")).gt(lit(1)), 
+            concat(lit("{"), array_join(col("raw_set"), " ⊕ "), lit("}"))
+          ).otherwise(
+            col("raw_set").getItem(0)
+          )
+        )
+        .drop("raw_set")
+        .orderBy("B")
 
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfActual)
     }
@@ -68,15 +87,17 @@ class ProvenanceAggregateTest extends AnyFunSpec with Matchers with SparkSession
       val dfWithProv = addProvenance(df, col("A"))
 
       val dfActual = dfWithProv
-        .groupBy("A")
-        .agg(max("B").as("max_B"))
-        .orderBy("A")
+        .groupBy("B")
+        .agg(max("C").as("max_C"))
+        .orderBy("B")
 
       val expected = df
-        .groupBy("A")
-        .agg(max("B").as("max_B"))
-        .withColumn(defaultProvenanceColName, col("A").cast("string"))
-        .orderBy("A")
+        .groupBy("B")
+        .agg(
+          max("C").as("max_C"),
+          expr("max_by(A, C)").cast("string").alias(defaultProvenanceColName)
+        )
+        .orderBy("B")
 
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfActual)
     }
@@ -86,13 +107,15 @@ class ProvenanceAggregateTest extends AnyFunSpec with Matchers with SparkSession
       df.createOrReplaceTempView(viewName)
       addProvenance(spark, viewName, col("A"))
 
-      val dfActual = spark.sql(s"SELECT A, MIN(B) AS min_B FROM $viewName GROUP BY A ORDER BY A")
+      val dfActual = spark.sql(s"SELECT B, MIN(C) AS min_C FROM $viewName GROUP BY B ORDER BY B")
 
       val expected = df
-        .groupBy("A")
-        .agg(min("B").as("min_B"))
-        .withColumn(defaultProvenanceColName, col("A").cast("string"))
-        .orderBy("A")
+        .groupBy("B")
+        .agg(
+          min("C").as("min_C"),
+          expr("min_by(A, C)").cast("string").alias(defaultProvenanceColName)
+        )
+        .orderBy("B")
 
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfActual)
     }
@@ -102,15 +125,27 @@ class ProvenanceAggregateTest extends AnyFunSpec with Matchers with SparkSession
       val dfWithProv = addProvenance(df, col("A"))
 
       val dfActual = dfWithProv
-        .groupBy("A")
-        .agg(max("B").as("max_B"), min("C").as("min_C"), sum("B").as("total_B"))
-        .orderBy("A")
+        .groupBy("B")
+        .agg(max("C").as("max_C"), min("C").as("min_C"), sum("C").as("total_C"))
+        .orderBy("B")
 
       val expected = df
-        .groupBy("A")
-        .agg(max("B").as("max_B"), min("C").as("min_C"), sum("B").as("total_B"))
-        .withColumn(defaultProvenanceColName, col("A").cast("string"))
-        .orderBy("A")
+        .groupBy("B")
+        .agg(
+          max("C").as("max_C"),
+          min("C").as("min_C"),
+          sum("C").as("total_C"),
+          collect_set("A").as("raw_set") 
+        )
+        .withColumn(defaultProvenanceColName, 
+          when(org.apache.spark.sql.functions.size(col("raw_set")).gt(lit(1)), 
+            concat(lit("{"), array_join(col("raw_set"), " ⊕ "), lit("}"))
+          ).otherwise(
+            col("raw_set").getItem(0)
+          )
+        )
+        .drop("raw_set") 
+        .orderBy("B")
 
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfActual)
     }
@@ -120,13 +155,25 @@ class ProvenanceAggregateTest extends AnyFunSpec with Matchers with SparkSession
       df.createOrReplaceTempView(viewName)
       addProvenance(spark, viewName, col("A"))
 
-      val dfActual = spark.sql(s"SELECT A, MAX(B) AS max_B, SUM(C) AS total_C FROM $viewName GROUP BY A ORDER BY A")
+      val dfActual = spark.sql(s"SELECT B, MAX(C) AS max_C, MIN(C) AS min_C, SUM(C) AS total_C FROM $viewName GROUP BY B ORDER BY B")
 
       val expected = df
-        .groupBy("A")
-        .agg(max("B").as("max_B"), sum("C").as("total_C"))
-        .withColumn(defaultProvenanceColName, col("A").cast("string"))
-        .orderBy("A")
+        .groupBy("B")
+        .agg(
+          max("C").as("max_C"),
+          min("C").as("min_C"),
+          sum("C").as("total_C"),
+          collect_set("A").as("raw_set") 
+        )
+        .withColumn(defaultProvenanceColName, 
+          when(org.apache.spark.sql.functions.size(col("raw_set")).gt(lit(1)), 
+            concat(lit("{"), array_join(col("raw_set"), " ⊕ "), lit("}"))
+          ).otherwise(
+            col("raw_set").getItem(0)
+          )
+        )
+        .drop("raw_set") 
+        .orderBy("B")
 
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfActual)
     }
@@ -137,17 +184,25 @@ class ProvenanceAggregateTest extends AnyFunSpec with Matchers with SparkSession
       addProvenance(spark, viewName, col("A"))
 
       val dfActual = spark.table(viewName)
-        .filter(col("A") =!= "d")
-        .groupBy("A")
+        .groupBy("B")
         .agg(avg("C").as("avg_C"))
-        .orderBy("A")
+        .orderBy("B")
 
       val expected = df
-        .filter(col("A") =!= "d")
-        .groupBy("A")
-        .agg(avg("C").as("avg_C"))
-        .withColumn(defaultProvenanceColName, col("A").cast("string"))
-        .orderBy("A")
+        .groupBy("B")
+        .agg(
+          avg("C").as("avg_C"),
+          collect_set("A").as("raw_set") 
+        )
+        .withColumn(defaultProvenanceColName, 
+          when(org.apache.spark.sql.functions.size(col("raw_set")).gt(lit(1)), 
+            concat(lit("{"), array_join(col("raw_set"), " ⊕ "), lit("}"))
+          ).otherwise(
+            col("raw_set").getItem(0)
+          )
+        )
+        .drop("raw_set")
+        .orderBy("B")
 
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfActual)
     }
@@ -157,14 +212,23 @@ class ProvenanceAggregateTest extends AnyFunSpec with Matchers with SparkSession
       df.createOrReplaceTempView(viewName)
       addProvenance(spark, viewName, col("A"))
 
-      val dfActual = spark.sql(s"SELECT A, AVG(C) AS avg_C FROM $viewName WHERE A != 'd' GROUP BY A ORDER BY A")
+      val dfActual = spark.sql(s"SELECT B, AVG(C) AS avg_C FROM $viewName GROUP BY B ORDER BY B")
 
       val expected = df
-        .filter(col("A") =!= "d")
-        .groupBy("A")
-        .agg(avg("C").as("avg_C"))
-        .withColumn(defaultProvenanceColName, col("A").cast("string"))
-        .orderBy("A")
+        .groupBy("B")
+        .agg(
+          avg("C").as("avg_C"),
+          collect_set("A").as("raw_set") 
+        )
+        .withColumn(defaultProvenanceColName, 
+          when(org.apache.spark.sql.functions.size(col("raw_set")).gt(lit(1)), 
+            concat(lit("{"), array_join(col("raw_set"), " ⊕ "), lit("}"))
+          ).otherwise(
+            col("raw_set").getItem(0)
+          )
+        )
+        .drop("raw_set")
+        .orderBy("B")
 
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfActual)
     }
@@ -174,15 +238,30 @@ class ProvenanceAggregateTest extends AnyFunSpec with Matchers with SparkSession
       val dfWithProv = addProvenance(df, col("A"))
 
       val dfActual = dfWithProv
-        .groupBy("A")
-        .agg(min("B").as("min_B"), max("B").as("max_B"))
-        .orderBy("A")
+        .groupBy("B")
+        .agg(min("C").as("min_C"), max("C").as("max_C"))
+        .orderBy("B")
 
       val expected = df
-        .groupBy("A")
-        .agg(min("B").as("min_B"), max("B").as("max_B"))
-        .withColumn(defaultProvenanceColName, col("A").cast("string"))
-        .orderBy("A")
+        .groupBy("B")
+        .agg(
+          min("C").as("min_C"), 
+          max("C").as("max_C"),
+          array_distinct(array(
+            expr("max_by(A, C)"), 
+            expr("min_by(A, C)")
+          )).as("raw_array")
+        )
+        .withColumn(defaultProvenanceColName, coalesce(
+          when(org.apache.spark.sql.functions.size(col("raw_array")) > lit(1), 
+            concat(lit("{"), array_join(col("raw_array"), " ⊕ "), lit("}"))
+          ).otherwise(
+            col("raw_array").getItem(0)
+          ).cast("string"),
+          lit("")
+        ))
+        .drop("raw_array")
+        .orderBy("B")
 
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfActual)
     }
@@ -192,13 +271,28 @@ class ProvenanceAggregateTest extends AnyFunSpec with Matchers with SparkSession
       df.createOrReplaceTempView(viewName)
       addProvenance(spark, viewName, col("A"))
 
-      val dfActual = spark.sql(s"SELECT A, MIN(B) AS min_B, MAX(B) AS max_B FROM $viewName GROUP BY A ORDER BY A")
+      val dfActual = spark.sql(s"SELECT B, MIN(C) AS min_C, MAX(C) AS max_C FROM $viewName GROUP BY B ORDER BY B")
 
       val expected = df
-        .groupBy("A")
-        .agg(min("B").as("min_B"), max("B").as("max_B"))
-        .withColumn(defaultProvenanceColName, col("A").cast("string"))
-        .orderBy("A")
+        .groupBy("B")
+        .agg(
+          min("C").as("min_C"), 
+          max("C").as("max_C"),
+          array_distinct(array(
+            expr("max_by(A, C)"), 
+            expr("min_by(A, C)")
+          )).as("raw_array")
+        )
+        .withColumn(defaultProvenanceColName, coalesce(
+          when(org.apache.spark.sql.functions.size(col("raw_array")) > lit(1), 
+            concat(lit("{"), array_join(col("raw_array"), " ⊕ "), lit("}"))
+          ).otherwise(
+            col("raw_array").getItem(0)
+          ).cast("string"),
+          lit("")
+        ))
+        .drop("raw_array")
+        .orderBy("B")
 
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfActual)
     }
