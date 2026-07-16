@@ -600,6 +600,7 @@ case class LogicalPlanWithProvenance(
             a
           }
 
+        // We look for 'Union' nodes, which represent UNION statements
         case u @ Union(children, byName, allowMissingCol) =>
           // We check if any of the children have the provenance column
           val childrenWithProv = children.filter(hasProv(_, provenanceColName))
