@@ -98,7 +98,7 @@ def data_provenance_session_builder(
 
     Args:
         provenance_builder: Builder strategy used by the Scala extension.
-            Supported values are: display, boolean, semi-why, full-why, light-why.
+            Supported values are: display, boolean, semi-why, full-why.
     """
     # 1. Find the path to the 'jars' folder dynamically
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -107,6 +107,9 @@ def data_provenance_session_builder(
     # 2. Build and return the SparkSession
     return (
         SparkSession.builder.config("spark.jars", jar_path)
-        .config("spark.sql.extensions", "org.dataprov.dp.ProvenanceExtension")
+        .config(
+            "spark.sql.extensions",
+            "org.dataprov.dp.sparkdataprovenance.SparkProvenanceExtension",
+        )
         .config("spark.provenance.builder", provenance_builder)
     )
