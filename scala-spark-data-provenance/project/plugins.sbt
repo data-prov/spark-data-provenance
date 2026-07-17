@@ -16,7 +16,7 @@ addSbtPlugin("ch.epfl.scala" % "sbt-scalafix" % "0.14.6")
 // addSbtPlugin("com.sonar-scala" % "sbt-sonar" % "2.3.0")
 
 // https://github.com/sbt/sbt-assembly
-// addSbtPlugin("com.eed3si9n" % "sbt-assembly" % "2.3.1")
+addSbtPlugin("com.eed3si9n" % "sbt-assembly" % "2.3.1")
 
 // https://github.com/sbt/sbt-native-packager
 // addSbtPlugin("com.typesafe.sbt" % "sbt-native-packager" % "1.11.17")

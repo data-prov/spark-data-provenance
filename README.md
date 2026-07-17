@@ -5,7 +5,16 @@
 * [Fine\-grained data provenance for Spark](#fine-grained-data-provenance-for-spark)
   * [Table of Content (ToC)](#table-of-content-toc)
   * [Overview](#overview)
+  * [Core Architecture and Features](#core-architecture-and-features)
+    * [Supported Provenance Builders (Modalities)](#supported-provenance-builders-modalities)
+      * [Boolean Provenance](#1-boolean-provenance)
+      * [Display Provenance](#2-display-provenance-default)
+      * [Full Why-Provenance](#3-full-why-provenance)
+      * [Semi Why-Provenance](#4-semi-why-provenance-selective)
+    * [Supported SQL Operators](#supported-sql-operators)
+    * [Current Limitations](#current-limitations)
   * [References](#references)
+  * [Pre-requisites](#pre-requisites)
   * [Getting started](#getting-started)
 
 Created by [gh-md-toc](https://github.com/ekalinin/github-markdown-toc.go)
@@ -16,9 +25,97 @@ This [project](https://github.com/data-prov/spark-data-provenance)
 explores how Spark may be instrumented/complemented with fine-grained provenance
 features.
 
+In industrial Big Data pipelines, testing and debugging transformations on 
+massive datasets is both financially costly and computationally heavy. 
+This extension solves this friction point by performing backward lineage tracing 
+directly inside Spark. By identifying the exact source rows (tuples) that 
+contributed to a specific query output, it allows data engineers to automatically 
+isolate a **minimal, functional, and consistent slice of input data** ideal for 
+rapid local testing, prototyping, and debugging.
+
 Even though the members of the GitHub organization may be employed by
 some companies, they speak on their personal behalf and do not represent
 these companies.
+
+## Core Architecture and Features
+
+This tool hooks into **Spark Catalyst**, which is Spark's native query optimizer, 
+by injecting custom tree-rewriting rules extended from `Rule[LogicalPlan]`. 
+To guarantee absolute stability and avoid breaking internal operations (such as 
+native `.show()`), the provenance rules are resolved **post-hoc** once the 
+original logical tree is fully analyzed and stabilized.
+
+### Supported Provenance Builders (Modalities)
+
+To balance the trade-off between tracking precision and execution performance, 
+the extension introduces a modular design based on **Provenance Builders**. 
+Users can configure the context to use one of four tracking modalities depending 
+on the target use case:
+
+| Modality / Builder | Data Type | Performance Overhead | Primary Use Case |
+| :--- | :--- | :--- | :--- |
+| **Boolean Provenance** | `Boolean` | Minimal | Data auditing, sanity checks, validation of row activation. |
+| **Display Provenance** | `String` | High | Interactive debugging, lineage visualization in Jupyter/Databricks notebooks. |
+| **Full Why-Provenance** | `Array[Array[Tag]]` | High | Academic research, exhaustive impact analysis, complex multi-path tracking. |
+| **Semi-Why Provenance** | `Array[Tag]` | Balanced (Optimized) | Automated minimal test dataset generation, local prototyping. |
+
+#### 1. Boolean Provenance
+* **Concept:** The simplest form of lineage. It evaluates whether a source row was 
+  processed and actively participated in the generation of at least one output row.
+* **Behavior:** Instead of tracking IDs or execution paths, it propagates a binary 
+  tag (`True` / `False`). 
+* **Benefit:** It provides the mathematical foundation to solve Incremental 
+  View Maintenance problem. When upstream rows are deleted (their variables are set 
+  to `False`), Spark can instantly evaluate the Boolean expression. If it evaluates
+  to `False`, the corresponding output row is purged automatically, avoiding a costly
+  and heavy full recomputation of the pipeline.
+
+#### 2. Display Provenance (Default)
+* **Concept:** A human-readable text-based representation of the full lineage path
+  with academic operators, without evaluation.
+* **Behavior:** It aggregates the operations and source identifiers into a 
+  formatted string block appended to the processed data.
+* **Benefit:** Tailored for the developer experience. It allows users to quickly 
+  run a `.show()` inside a Databricks or Jupyter notebook to visually trace a 
+  suspicious data point back to its root table name or partition without querying 
+  low-level metadata.
+
+#### 3. Full Why-Provenance
+* **Concept:** The classic academic implementation of Why-Provenance based on 
+  relational semirings.
+* **Behavior:** It builds a complete combinatorial tree of all alternative records 
+  that could explain the existence of a given output row. If an output row is the 
+  result of a heavily aggregated dataset or a global deduplication (`DISTINCT`),
+  it embeds every single matching row variant inside a multi-dimensional array of arrays.
+* **Benefit:** Guarantees absolute, non-lossy lineage tracking for strict regulatory
+  or forensic compliance requirements.
+
+#### 4. Semi-Why Provenance (Selective)
+* **Concept:** The default, pragmatic modality engineered specifically for this project's 
+  core requirement.
+* **Behavior:** It simplifies the standard Why-Provenance paradigm by executing a distinct 
+  filtration pass. Instead of collecting every mathematical permutation of a derivation, 
+  it drops redundant alternative lineages and preserves only the minimum sufficient rows
+  required to successfully re-trigger and test the operator's logic.
+* **Benefit:** Flattens the memory footprint into a clean, one-dimensional `Array[Tag]`, 
+  ensuring that Spark Catalyst can optimize the abstract syntax tree (AST) swiftly while 
+  extracting the lightest possible dataset slice for local engineering unit tests.
+
+### Supported SQL Operators
+The extension successfully propagates provenance tags across major relational 
+algebra operators:
+*   **Projection / Selection:** `SELECT` (`Project`), `FILTER`
+*   **Sorting:** `ORDER BY` (`Sort`)
+*   **Deduplication:** `DISTINCT`, `Deduplicate`
+*   **Aggregations:** `GROUP BY` (`Aggregate`)
+*   **Jointures:** `JOIN` (`Inner`, `Left Outer`, `Right Outer`, `Full Outer`)
+
+### Current Limitations
+The engineering roadmap currently prioritizes the resolution of:
+*   **Set Theory Operators:** Complex negative provenance conditions like `EXCEPT`, 
+  `NOT IN` or `LEFT ANTI JOIN`.
+*   **Window Functions:** Analytical partitioning and ordering rules 
+  (`window functions`).
 
 ## References
 
@@ -135,3 +232,46 @@ make python-install-local
 ```bash
 make python-run-local
 ```
+
+
+## Core Architecture & Features
+
+This tool hooks into **Spark Catalyst** (Spark's native query optimizer) by injecting custom tree-rewriting rules extended from `Rule[LogicalPlan]`. To guarantee absolute stability and avoid breaking internal operations (such as native `.show()` or runtime optimizations), the provenance rules are resolved **post-hoc** once the original logical tree is fully analyzed and stabilized.
+
+### Supported Provenance Builders (Modalities)
+To balance the trade-off between tracking precision and execution performance, the extension introduces a modular design based on **Provenance Builders**. Data engineers can configure the context to use one of four tracking modalities depending on the target use case:
+
+| Modality / Builder | Data Structure | Performance Overhead | Primary Use Case |
+| :--- | :--- | :--- | :--- |
+| **Boolean Provenance** | `Boolean` | Minimal | Data auditing, sanity checks, validation of row activation. |
+| **Display Provenance** | `String` | Low | Interactive debugging, lineage visualization in notebooks. |
+| **Full Why-Provenance** | `Array[Array[Tag]]` | High | Academic research, exhaustive multi-path tracking. |
+| **Semi-Why Provenance** | `Array[Tag]` | Balanced (Optimized) | Automated minimal test dataset generation, local prototyping. |
+
+#### 1. Boolean Provenance
+* **Concept:** The simplest form of lineage. It evaluates whether a source row was processed and actively participated in the generation of at least one output row by propagating a binary flag (`True` / `False`).
+* **Benefit:** It introduces virtually zero memory footprint, making it ideal for large-scale production pipelines to verify if data sources are "live" or pruned.
+
+#### 2. Display Provenance
+* **Concept:** A human-readable text-based representation of the lineage path (`String`).
+* **Benefit:** Tailored for the developer experience (DX). It allows engineers to quickly run a `.show()` inside a Databricks or Jupyter notebook to visually trace a suspicious data point back to its root table name.
+
+#### 3. Full Why-Provenance
+* **Concept:** The classic academic implementation based on relational semirings. It builds a complete combinatorial tree of all alternative records that could explain the existence of a given output row, resulting in a nested `Array[Array[Tag]]`.
+* **Benefit:** Guarantees absolute, non-lossy lineage tracking for strict regulatory or forensic compliance requirements.
+
+#### 4. Semi-Why Provenance (Selective)
+* **Concept:** The default, pragmatic modality engineered specifically for this project's core requirement. Instead of collecting every mathematical permutation of a derivation, it drops redundant alternative lineages and preserves only **the absolute minimum sufficient rows** required to successfully re-trigger and test the operator's logic.
+* **Benefit:** Flattens the memory footprint into a clean, one-dimensional `Array[Tag]`, ensuring that Spark Catalyst can optimize the abstract syntax tree (AST) swiftly while extracting the lightest possible dataset slice for local unit tests.
+
+### Supported SQL Operators
+The extension successfully propagates provenance tags across major relational algebra operators:
+*   **Projection / Selection:** `SELECT` (`Project`), `FILTER`
+*   **Sorting & Deduplication:** `SORT`, `DISTINCT`
+*   **Aggregations:** `GROUP BY` (`Aggregate`)
+*   **Jointures:** `JOIN` (`Inner`, `Left Outer`, `Right Outer`, `Full Outer` - excluding `Left Anti`)
+
+### Current Limitations
+The engineering roadmap currently prioritizes the resolution of:
+*   **Set Theory Operators:** Complex negative provenance conditions like `EXCEPT` or `NOT IN`.
+*   **Window Functions:** Analytical partitioning and ordering rules (`window functions`).

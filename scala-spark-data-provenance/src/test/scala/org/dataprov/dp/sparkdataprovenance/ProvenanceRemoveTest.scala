@@ -57,12 +57,17 @@ class ProvenanceRemoveTest extends AnyFunSpec with Matchers with SparkSessionTes
       // Add provenance to dataframe
       val dfWithProv = addProvenance(toyDf)
 
-      // Remove provenance from dataframe
-      val dfWithoutProvenance = removeProvenance(dfWithProv)
+      try {
+        spark.conf.set("spark.provenance.enabled", "false")
+        // Remove provenance from dataframe
+        val dfWithoutProvenance = removeProvenance(dfWithProv)
 
-      // Perform checks
-      assertNoProvenanceColumnAndDataPreserved(dfWithoutProvenance, defaultProvenanceColName, df)
-      assertDataFrameProvenanceIdempotent(dfWithoutProvenance)
+        // Perform checks
+        assertNoProvenanceColumnAndDataPreserved(dfWithoutProvenance, defaultProvenanceColName, df)
+        assertDataFrameProvenanceIdempotent(dfWithoutProvenance)
+      } finally {
+        spark.conf.set("spark.provenance.enabled", "true")
+      }
     }
 
     itWithProvenanceDisabled("should remove the provenance column from a dataframe if already present with custom column name", customProvColName) {
@@ -86,12 +91,17 @@ class ProvenanceRemoveTest extends AnyFunSpec with Matchers with SparkSessionTes
       df.createOrReplaceTempView(viewName)
       addProvenance(spark, viewName)
 
-      // Remove provenance from view
-      removeProvenance(spark, viewName)
+      try {
+        spark.conf.set("spark.provenance.enabled", "false")
+        // Remove provenance from view
+        removeProvenance(spark, viewName)
 
-      // Perform checks
-      assertNoProvenanceColumnAndDataPreserved(spark.table(viewName), defaultProvenanceColName, df)
-      assertViewProvenanceIdempotent(viewName)
+        // Perform checks
+        assertNoProvenanceColumnAndDataPreserved(spark.table(viewName), defaultProvenanceColName, df)
+        assertViewProvenanceIdempotent(viewName)
+      } finally {
+        spark.conf.set("spark.provenance.enabled", "true")
+      }
     }
 
     itWithProvenanceDisabled("should remove the provenance column from a view if already present with custom column name", customProvColName) {

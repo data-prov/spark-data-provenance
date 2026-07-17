@@ -1,15 +1,98 @@
-# scala-spark-data-provenance
+# Scala Spark - Fine-grained data provenance - Scala part
 
-*add project short description*
+## Table of Content (ToC)
 
-## Accessing the library
+* [Scala Spark \- Fine\-grained data provenance \- Scala part](#scala-spark---fine-grained-data-provenance---scala-part)
+  * [Table of Content (ToC)](#table-of-content-toc)
+  * [Overview](#overview)
+  * [Quick Start](#quick-start)
+  * [Project Layout](#project-layout)
+  * [Common commands](#common-commands)
+  * [Development life\-cycle](#development-life-cycle)
+  * [JAR Distribution and Deployment](#jar-distribution-and-deployment)
+  * [CI/CD](#cicd)
 
-*How to access the code*
+Created by [gh-md-toc](https://github.com/ekalinin/github-markdown-toc.go)
 
-## Documentation
 
-*A link to the documentation*
+## Overview
 
-## How to contribute
+Scala package in this monorepo implementing custom logical plan optimization rules (`Rule[LogicalPlan]`) within **Spark Catalyst** to enable data provenance features.
 
-*How others can contribute to the project*
+This project is managed with `sbt` (Scala Build Tool).
+
+## Quick Start
+
+From the repository root:
+
+```bash
+cd scala-spark-data-provenance
+make clean           
+make init           
+make check           
+make test 
+make build
+```
+
+## Project Layout
+
+```text
+scala-spark-data-provenance/
+    project/
+    src/main/scala/org/dataprov/dp/sparkdataprovenance/
+    src/test/scala/org/dataprov/dp/sparkdataprovenance/
+    target/
+    tests/
+    build.sbt
+    Makefile
+```
+
+
+## Common commands
+
+* `make info` - Display the current package version and targeted Scala minor version
+* `make clean` - Remove compilation caches, `target/` directories, and temporary SBT project artifacts
+* `make compile` - Compile the Scala source code files
+* `make build` - Package the project into a standard library JAR file (`sbt package`) and display its path
+* `make test` - Run unit test
+* `make publish-local` - Publish the package as a local Snapshot artifact to both your Ivy local cache (`publishLocal`) and Maven local repository (`publishM2`).
+* `make lint` - Verify semantic and syntactic rules using Scalafix without modifying files
+* `make fix-lint` - Automatically apply code fixes and rewrites based on Scalafix rules
+* `make format-check` - Check if the Scala source files comply with style guidelines using Scalafmt
+* `make format` - Automatically reformat all Scala source files according to rules
+* `make check` - Run a complete quality gate validation by executing both linting and formatting checks (`make lint format-check`)
+* `make fix` - Automatically apply all available formatting and linting fixes to the codebase (`make fix-lint format`)
+
+## JAR Distribution and Deployment
+
+The core engine is packaged as a JAR to allow native injection inside Spark 
+environments without manual dependency resolution.
+
+Optionally, the artifact can be compiled and verified locally:
+
+```bash
+make build
+make publish-local
+```
+
+The resulting file is generated under `target/scala-2.13/dp-spark-assembly-[VERSION].jar`.
+
+## Cluster Deployment 
+
+To enable the provenance rules inside an enterprise cloud environment like 
+Databricks, the JAR must be loaded onto the driver's classpath at boot 
+time using an Initialization Script (Init Script)
+
+Upload the generated assembly JAR to your Databricks DBFS or Workspace Volume.
+
+Configure a cluster Init Script (install_provenance_jar.sh) to link the JAR
+
+Restart the cluster nodes to trigger the Rule[LogicalPlan] interception.
+
+
+## CI/CD
+
+Repository-level workflows are provided for:
+
+* CI: lint, format-check, and tests on pushes/PRs affecting this package via `make check`
+* Publish: build and publish-local on release

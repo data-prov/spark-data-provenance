@@ -70,7 +70,7 @@ class ProvenanceProjectTest extends AnyFunSpec with Matchers with SparkSessionTe
     itWithProvenanceEnabled("should preserve provenance when aliasing columns") {
       val df = toyDf
 
-      val dfWithProvProjected = spark.sql(s"SELECT A, B, B AS B_alias FROM $viewName")
+      val dfWithProvProjected = addProvenance(df, col("B")).select(col("A"), col("B"), col("B").as("B_alias"))
       val expected = df.select("A", "B").withColumn("B_alias", col("B")).withColumn(defaultProvenanceColName, col("B"))
 
       assertProvenanceColumnAndDataPreserved(expected, defaultProvenanceColName, dfWithProvProjected)
