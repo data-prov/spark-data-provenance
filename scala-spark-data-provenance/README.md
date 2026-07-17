@@ -5,6 +5,9 @@
 * [Scala Spark \- Fine\-grained data provenance \- Scala part](#scala-spark---fine-grained-data-provenance---scala-part)
   * [Table of Content (ToC)](#table-of-content-toc)
   * [Overview](#overview)
+  * [Architecture & Provenance Builders](#architecture--provenance-builders)
+  * [Supported Operators](#supported-operators)
+  * [Backward Lineage & Minimal Datasets](#backward-lineage--minimal-datasets)
   * [Quick Start](#quick-start)
   * [Project Layout](#project-layout)
   * [Common commands](#common-commands)
@@ -20,6 +23,33 @@ Created by [gh-md-toc](https://github.com/ekalinin/github-markdown-toc.go)
 Scala package in this monorepo implementing custom logical plan optimization rules (`Rule[LogicalPlan]`) within **Spark Catalyst** to enable data provenance features.
 
 This project is managed with `sbt` (Scala Build Tool).
+
+## Architecture and Provenance Builders
+
+The core engine is built around a **Pluggable Provenance Architecture**. The traversal of the Catalyst logical plan is decoupled from the actual formatting of the provenance tags using the `ProvenanceBuilder` interface. 
+
+You can easily switch between different provenance semantics without altering the core engine:
+* **Boolean Provenance**: Tracks the presence/absence of source records.
+* **Display String Provenance**: Provide a human-readable text-based representation of the full lineage path
+  with academic operators, without evaluation.
+* **Why Provenance (Full-Why)**: Exhaustively tracks all contributing source records for a given output row.
+* **Semi-Why Provenance**: Provides a compacted or flattened version of the lineage to reduce memory footprint on massive datasets.
+
+## Supported Operators
+
+The engine supports end-to-end provenance tracking across a wide range of Spark SQL and DataFrame APIs:
+* **Basic Operations**: `Project` (with aliasing), `Filter` (AND, OR, NOT, IS NULL), `Sort`.
+* **Joins**: `Inner`, `Outer`, `Left`, `Right`, `Cross`, `Left Semi Join` and `Left Anti Join`.
+* **Aggregations**: `Aggregate` nodes with advanced witness election (`MIN`, `MAX`, `SUM`, `AVG`).
+* **Set Operations**: `Union`, `Intersect`, `Except`.
+* **Deduplication**: `Distinct` (SQL) and `dropDuplicates()` (DataFrame).
+* **Analytics**: `Window` functions.
+
+## Backward Lineage and Minimal Datasets
+
+The framework includes backward lineage capabilities allowing users to query final pipeline results and retrieve the almost **minimal input datasets** that contributed to those specific rows. This turns abstract provenance tags into concrete, actionable source data debugging.
+
+---
 
 ## Quick Start
 

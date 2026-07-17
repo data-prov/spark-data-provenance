@@ -12,7 +12,7 @@
       * [Full Why-Provenance](#3-full-why-provenance)
       * [Semi Why-Provenance](#4-semi-why-provenance-selective)
     * [Supported SQL Operators](#supported-sql-operators)
-    * [Current Limitations](#current-limitations)
+    * [Backward Lineage and Minimal Datasets](#backward-lineage-and-minimal-datasets)
   * [References](#references)
   * [Pre-requisites](#pre-requisites)
   * [Getting started](#getting-started)
@@ -30,7 +30,7 @@ massive datasets is both financially costly and computationally heavy.
 This extension solves this friction point by performing backward lineage tracing 
 directly inside Spark. By identifying the exact source rows (tuples) that 
 contributed to a specific query output, it allows data engineers to automatically 
-isolate a **minimal, functional, and consistent slice of input data** ideal for 
+isolate an almost **minimal, functional, and consistent slice of input data** ideal for 
 rapid local testing, prototyping, and debugging.
 
 Even though the members of the GitHub organization may be employed by
@@ -95,7 +95,7 @@ on the target use case:
   core requirement.
 * **Behavior:** It simplifies the standard Why-Provenance paradigm by executing a distinct 
   filtration pass. Instead of collecting every mathematical permutation of a derivation, 
-  it drops redundant alternative lineages and preserves only the minimum sufficient rows
+  it drops redundant alternative lineages and preserves almost only the minimum sufficient rows
   required to successfully re-trigger and test the operator's logic.
 * **Benefit:** Flattens the memory footprint into a clean, one-dimensional `Array[Tag]`, 
   ensuring that Spark Catalyst can optimize the abstract syntax tree (AST) swiftly while 
@@ -104,18 +104,20 @@ on the target use case:
 ### Supported SQL Operators
 The extension successfully propagates provenance tags across major relational 
 algebra operators:
-*   **Projection / Selection:** `SELECT` (`Project`), `FILTER`
-*   **Sorting:** `ORDER BY` (`Sort`)
-*   **Deduplication:** `DISTINCT`, `Deduplicate`
-*   **Aggregations:** `GROUP BY` (`Aggregate`)
-*   **Jointures:** `JOIN` (`Inner`, `Left Outer`, `Right Outer`, `Full Outer`)
+*   **Projection / Selection:** `SELECT` (`Project`), `FILTER` (AND, OR, NOT, IS NULL)
+*   **Sorting & Deduplication:** `ORDER BY` (`Sort`), `DISTINCT`
+*   **Aggregations:** `GROUP BY` (`Aggregate` with specific witness election like `MIN`, `MAX`, `SUM`, `AVG`)
+*   **Jointures:** `JOIN` (`Inner`, `Left Outer`, `Right Outer`, `Full Outer`, `Cross`, `Left Semi Join` and `Left Anti Join`)
+*   **Set Operations:** `UNION`, `INTERSECT`, `EXCEPT`
+*   **Analytics:** `Window` functions
 
-### Current Limitations
-The engineering roadmap currently prioritizes the resolution of:
-*   **Set Theory Operators:** Complex negative provenance conditions like `EXCEPT`, 
-  `NOT IN` or `LEFT ANTI JOIN`.
-*   **Window Functions:** Analytical partitioning and ordering rules 
-  (`window functions`).
+### Backward Lineage and Minimal Datasets
+The framework includes a dedicated backward lineage extraction function. 
+By targeting specific rows at the very end of a complex pipeline, the framework 
+can trace the tags back to their roots and automatically extract the 
+**minimal input datasets** (not completely minimal). This effectively turns 
+abstract provenance arrays into concrete, actionable source data for local debugging.
+
 
 ## References
 
@@ -232,46 +234,3 @@ make python-install-local
 ```bash
 make python-run-local
 ```
-
-
-## Core Architecture & Features
-
-This tool hooks into **Spark Catalyst** (Spark's native query optimizer) by injecting custom tree-rewriting rules extended from `Rule[LogicalPlan]`. To guarantee absolute stability and avoid breaking internal operations (such as native `.show()` or runtime optimizations), the provenance rules are resolved **post-hoc** once the original logical tree is fully analyzed and stabilized.
-
-### Supported Provenance Builders (Modalities)
-To balance the trade-off between tracking precision and execution performance, the extension introduces a modular design based on **Provenance Builders**. Data engineers can configure the context to use one of four tracking modalities depending on the target use case:
-
-| Modality / Builder | Data Structure | Performance Overhead | Primary Use Case |
-| :--- | :--- | :--- | :--- |
-| **Boolean Provenance** | `Boolean` | Minimal | Data auditing, sanity checks, validation of row activation. |
-| **Display Provenance** | `String` | Low | Interactive debugging, lineage visualization in notebooks. |
-| **Full Why-Provenance** | `Array[Array[Tag]]` | High | Academic research, exhaustive multi-path tracking. |
-| **Semi-Why Provenance** | `Array[Tag]` | Balanced (Optimized) | Automated minimal test dataset generation, local prototyping. |
-
-#### 1. Boolean Provenance
-* **Concept:** The simplest form of lineage. It evaluates whether a source row was processed and actively participated in the generation of at least one output row by propagating a binary flag (`True` / `False`).
-* **Benefit:** It introduces virtually zero memory footprint, making it ideal for large-scale production pipelines to verify if data sources are "live" or pruned.
-
-#### 2. Display Provenance
-* **Concept:** A human-readable text-based representation of the lineage path (`String`).
-* **Benefit:** Tailored for the developer experience (DX). It allows engineers to quickly run a `.show()` inside a Databricks or Jupyter notebook to visually trace a suspicious data point back to its root table name.
-
-#### 3. Full Why-Provenance
-* **Concept:** The classic academic implementation based on relational semirings. It builds a complete combinatorial tree of all alternative records that could explain the existence of a given output row, resulting in a nested `Array[Array[Tag]]`.
-* **Benefit:** Guarantees absolute, non-lossy lineage tracking for strict regulatory or forensic compliance requirements.
-
-#### 4. Semi-Why Provenance (Selective)
-* **Concept:** The default, pragmatic modality engineered specifically for this project's core requirement. Instead of collecting every mathematical permutation of a derivation, it drops redundant alternative lineages and preserves only **the absolute minimum sufficient rows** required to successfully re-trigger and test the operator's logic.
-* **Benefit:** Flattens the memory footprint into a clean, one-dimensional `Array[Tag]`, ensuring that Spark Catalyst can optimize the abstract syntax tree (AST) swiftly while extracting the lightest possible dataset slice for local unit tests.
-
-### Supported SQL Operators
-The extension successfully propagates provenance tags across major relational algebra operators:
-*   **Projection / Selection:** `SELECT` (`Project`), `FILTER`
-*   **Sorting & Deduplication:** `SORT`, `DISTINCT`
-*   **Aggregations:** `GROUP BY` (`Aggregate`)
-*   **Jointures:** `JOIN` (`Inner`, `Left Outer`, `Right Outer`, `Full Outer` - excluding `Left Anti`)
-
-### Current Limitations
-The engineering roadmap currently prioritizes the resolution of:
-*   **Set Theory Operators:** Complex negative provenance conditions like `EXCEPT` or `NOT IN`.
-*   **Window Functions:** Analytical partitioning and ordering rules (`window functions`).
