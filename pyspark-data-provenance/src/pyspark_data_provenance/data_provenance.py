@@ -114,9 +114,11 @@ def data_provenance_session_builder(
         .config("spark.provenance.builder", provenance_builder)
     )
 
-
 def get_minimal_sources(
-    df: DataFrame, source_dfs: T.Sequence[DataFrame], spark: SparkSession, provenance_col: str | None = None
+    df: DataFrame,
+    source_dfs: T.Sequence[DataFrame],
+    spark: SparkSession,
+    provenance_col: str | None = None
 ) -> T.List[DataFrame]:
     """
     Extracts the minimal rows from source DataFrames that contributed to the given final DataFrame.
@@ -125,6 +127,8 @@ def get_minimal_sources(
         provenance_col = provenance_column_name(spark)
 
     gw = spark._sc._gateway
+    if gw is None:
+        raise RuntimeError("Spark context gateway is not initialized")
 
     java_source_dfs = gw.jvm.java.util.ArrayList()
     for source in source_dfs:
@@ -140,11 +144,8 @@ def get_minimal_sources(
     return python_result_dfs
 
 
-def _py_dataframe_extension_get_minimal_sources(
-    self, source_dfs: T.Sequence[DataFrame], provenance_col: str | None = None
-) -> T.List[DataFrame]:
+def _py_dataframe_extension_get_minimal_sources(self: DataFrame, source_dfs: T.Sequence[DataFrame], provenance_col: str | None = None) -> T.List[DataFrame]:
     """Helper attached to PySpark DataFrame class for fluent API usage."""
     return get_minimal_sources(self, source_dfs, self.sparkSession, provenance_col)
 
-
-DataFrame.get_minimal_sources = _py_dataframe_extension_get_minimal_sources
+setattr(DataFrame, "get_minimal_sources", _py_dataframe_extension_get_minimal_sources)
