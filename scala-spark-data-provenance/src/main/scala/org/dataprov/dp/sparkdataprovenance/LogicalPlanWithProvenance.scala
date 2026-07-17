@@ -1,6 +1,7 @@
 package org.dataprov.dp.sparkdataprovenance
 
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.analysis.UnresolvedStar
 import org.apache.spark.sql.catalyst.expressions.Alias
 import org.apache.spark.sql.catalyst.expressions.And
 import org.apache.spark.sql.catalyst.expressions.ArrayDistinct
@@ -13,7 +14,9 @@ import org.apache.spark.sql.catalyst.expressions.CurrentRow
 import org.apache.spark.sql.catalyst.expressions.EqualNullSafe
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.expressions.If
+import org.apache.spark.sql.catalyst.expressions.InSubquery
 import org.apache.spark.sql.catalyst.expressions.IsNull
+import org.apache.spark.sql.catalyst.expressions.ListQuery
 import org.apache.spark.sql.catalyst.expressions.Literal
 import org.apache.spark.sql.catalyst.expressions.MonotonicallyIncreasingID
 import org.apache.spark.sql.catalyst.expressions.NamedExpression
@@ -58,9 +61,6 @@ import org.apache.spark.sql.types.BooleanType
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.types.StringType
 import org.dataprov.dp.sparkdataprovenance.ProvenanceApi._
-import org.apache.spark.sql.catalyst.expressions.InSubquery
-import org.apache.spark.sql.catalyst.expressions.ListQuery
-import org.apache.spark.sql.catalyst.analysis.UnresolvedStar
 
 case class LogicalPlanWithProvenance(
     spark: SparkSession,
@@ -196,12 +196,12 @@ case class LogicalPlanWithProvenance(
 
         // // We look for 'Project' nodes, which represent SELECT statements
         case p @ Project(projectList, child) =>
-
           val hasStar = projectList.exists(_.isInstanceOf[UnresolvedStar])
 
           if (hasStar) {
             // If the project list contains a star, we need to expand it to include all columns
-            val expandedProjectList = child.output.map(attr => Alias(attr, attr.name)())
+            val expandedProjectList =
+              child.output.map(attr => Alias(attr, attr.name)())
             p.copy(projectList = expandedProjectList, child = child)
           } else {
             // We check if the child has the provenance column and if the project itself already has it
@@ -252,12 +252,13 @@ case class LogicalPlanWithProvenance(
               val subPlan = listQ.plan
               // If the subquery plan has the provenance column, we need to remove it
               if (subPlan.output.exists(_.name == provenanceColName)) {
-                val cleanedOutput = subPlan.output.filter(_.name != provenanceColName)
+                val cleanedOutput =
+                  subPlan.output.filter(_.name != provenanceColName)
                 val cleanedSubPlan = Project(cleanedOutput, subPlan)
                 // We create a new ListQuery with the cleaned subquery plan and the updated number of columns
                 val newListQ = listQ.copy(
                   plan = cleanedSubPlan,
-                  numCols = cleanedOutput.length 
+                  numCols = cleanedOutput.length
                 )
                 inSub.copy(query = newListQ)
               } else {
