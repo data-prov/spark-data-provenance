@@ -1,6 +1,7 @@
 package org.dataprov.dp.sparkdataprovenance
 
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.analysis.UnresolvedStar
 import org.apache.spark.sql.catalyst.expressions.Alias
 import org.apache.spark.sql.catalyst.expressions.And
 import org.apache.spark.sql.catalyst.expressions.ArrayDistinct
@@ -13,7 +14,9 @@ import org.apache.spark.sql.catalyst.expressions.CurrentRow
 import org.apache.spark.sql.catalyst.expressions.EqualNullSafe
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.expressions.If
+import org.apache.spark.sql.catalyst.expressions.InSubquery
 import org.apache.spark.sql.catalyst.expressions.IsNull
+import org.apache.spark.sql.catalyst.expressions.ListQuery
 import org.apache.spark.sql.catalyst.expressions.Literal
 import org.apache.spark.sql.catalyst.expressions.MonotonicallyIncreasingID
 import org.apache.spark.sql.catalyst.expressions.NamedExpression
@@ -193,50 +196,77 @@ case class LogicalPlanWithProvenance(
 
         // // We look for 'Project' nodes, which represent SELECT statements
         case p @ Project(projectList, child) =>
-          // We check if the child has the provenance column and if the project itself already has it
-          val childHasProv = hasProv(child, provenanceColName)
+          val hasStar = projectList.exists(_.isInstanceOf[UnresolvedStar])
 
-          // We partition the projectList into provenance expressions and non-provenance expressions
-          val (provExprs, nonProvExprs) = projectList.partition {
-            case Alias(_, name)  => name == provenanceColName
-            case attr: Attribute => attr.name == provenanceColName
-            case _               => false
-          }
-
-          // We filter the non-provenance expressions to keep only those that reference
-          // columns from the child output
-          val validNonProvExprs = nonProvExprs.filter(expr =>
-            expr.references.subsetOf(child.outputSet)
-          )
-
-          if (childHasProv) {
-            val childProvAttr = getProvAttr(child, provenanceColName)
-            // Reuse the existing provenance expression if all its references are still
-            // satisfied by the current child output (multi-pass stability: a fresh alias
-            // added on a previous pass is preserved unchanged on subsequent passes).
-            // Otherwise create a fresh Alias so that two derivations of the same source
-            // each get a distinct ExprId — required for correct self-join provenance
-            // tracking (without this, both sides of the join share the same ExprId and
-            // Spark resolves both references to the same row value).
-            val provExpr = provExprs
-              .collectFirst {
-                case expr if expr.references.subsetOf(child.outputSet) => expr
-              }
-              .getOrElse(Alias(childProvAttr, provenanceColName)())
-            p.copy(projectList = validNonProvExprs :+ provExpr, child = child)
-          } else if (validNonProvExprs.size != nonProvExprs.size) {
-            // If some expressions were removed because they reference columns that are no longer present
-            // in the child output, we need to update the project list
-            p.copy(projectList = validNonProvExprs, child = child)
+          if (hasStar) {
+            // If the project list contains a star, we need to expand it to include all columns
+            val expandedProjectList =
+              child.output.map(attr => Alias(attr, attr.name)())
+            p.copy(projectList = expandedProjectList, child = child)
           } else {
-            p
+            // We check if the child has the provenance column and if the project itself already has it
+            val childHasProv = hasProv(child, provenanceColName)
+
+            // We partition the projectList into provenance expressions and non-provenance expressions
+            val (provExprs, nonProvExprs) = projectList.partition {
+              case Alias(_, name)  => name == provenanceColName
+              case attr: Attribute => attr.name == provenanceColName
+              case _               => false
+            }
+
+            // We filter the non-provenance expressions to keep only those that reference
+            // columns from the child output
+            val validNonProvExprs = nonProvExprs.filter(expr =>
+              expr.references.subsetOf(child.outputSet)
+            )
+
+            if (childHasProv) {
+              val childProvAttr = getProvAttr(child, provenanceColName)
+              // Reuse the existing provenance expression if all its references are still
+              // satisfied by the current child output (multi-pass stability: a fresh alias
+              // added on a previous pass is preserved unchanged on subsequent passes).
+              // Otherwise create a fresh Alias so that two derivations of the same source
+              // each get a distinct ExprId — required for correct self-join provenance
+              // tracking (without this, both sides of the join share the same ExprId and
+              // Spark resolves both references to the same row value).
+              val provExpr = provExprs
+                .collectFirst {
+                  case expr if expr.references.subsetOf(child.outputSet) => expr
+                }
+                .getOrElse(Alias(childProvAttr, provenanceColName)())
+              p.copy(projectList = validNonProvExprs :+ provExpr, child = child)
+            } else if (validNonProvExprs.size != nonProvExprs.size) {
+              // If some expressions were removed because they reference columns that are no longer present
+              // in the child output, we need to update the project list
+              p.copy(projectList = validNonProvExprs, child = child)
+            } else {
+              p
+            }
           }
 
         // We look for 'Filter' nodes, which represent WHERE statements
         case f @ Filter(condition, child) =>
-          // Filtering does not require provenance-specific rewrites.
-          // Keep user predicate unchanged, including rows with null provenance.
-          f
+          val newCondition = condition.transform {
+            // We look for 'InSubquery' expressions, which represent IN subqueries
+            case inSub @ InSubquery(values, listQ: ListQuery) =>
+              val subPlan = listQ.plan
+              // If the subquery plan has the provenance column, we need to remove it
+              if (subPlan.output.exists(_.name == provenanceColName)) {
+                val cleanedOutput =
+                  subPlan.output.filter(_.name != provenanceColName)
+                val cleanedSubPlan = Project(cleanedOutput, subPlan)
+                // We create a new ListQuery with the cleaned subquery plan and the updated number of columns
+                val newListQ = listQ.copy(
+                  plan = cleanedSubPlan,
+                  numCols = cleanedOutput.length
+                )
+                inSub.copy(query = newListQ)
+              } else {
+                inSub
+              }
+          }
+          // We return a new Filter node with the updated condition
+          f.copy(condition = newCondition)
 
         // We look for 'Sort' nodes, which represent ORDER BY statements
         case s @ Sort(order, global, child, hint) =>
