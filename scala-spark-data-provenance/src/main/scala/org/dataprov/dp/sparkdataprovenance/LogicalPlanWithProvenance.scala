@@ -103,7 +103,7 @@ case class LogicalPlanWithProvenance(
   // Helper function to find the widest specified window frame among a sequence of window expressions
   // It returns an Option[SpecifiedWindowFrame] that represents the widest frame found
   private def widestSpecifiedWindowFrame(
-      windowExprs: Seq[NamedExpression]
+      windowExprs: Seq[Expression]
   ): Option[SpecifiedWindowFrame] = {
     // Collect all specified window frames from the window expressions
     val frames = windowExprs.flatMap(_.collect {
@@ -196,19 +196,23 @@ case class LogicalPlanWithProvenance(
 
         // // We look for 'Project' nodes, which represent SELECT statements
         case p @ Project(projectList, child) =>
-          val hasStar = projectList.exists(_.isInstanceOf[UnresolvedStar])
+          val safeProjectList = projectList.asInstanceOf[Seq[Expression]]
+          val hasStar = safeProjectList.exists(_.isInstanceOf[UnresolvedStar])
 
           if (hasStar) {
             // If the project list contains a star, we need to expand it to include all columns
-            val expandedProjectList =
-              child.output.map(attr => Alias(attr, attr.name)())
-            p.copy(projectList = expandedProjectList, child = child)
+            // while carefully preserving any other explicit columns (like those added by withColumn)
+            val expandedProjectList = safeProjectList.flatMap {
+              case _: UnresolvedStar => child.output.map(attr => Alias(attr, attr.name)())
+              case other             => Seq(other)
+            }
+            p.copy(projectList = expandedProjectList.asInstanceOf[Seq[NamedExpression]], child = child)
           } else {
             // We check if the child has the provenance column and if the project itself already has it
             val childHasProv = hasProv(child, provenanceColName)
 
             // We partition the projectList into provenance expressions and non-provenance expressions
-            val (provExprs, nonProvExprs) = projectList.partition {
+            val (provExprs, nonProvExprs) = safeProjectList.partition {
               case Alias(_, name)  => name == provenanceColName
               case attr: Attribute => attr.name == provenanceColName
               case _               => false
@@ -234,11 +238,19 @@ case class LogicalPlanWithProvenance(
                   case expr if expr.references.subsetOf(child.outputSet) => expr
                 }
                 .getOrElse(Alias(childProvAttr, provenanceColName)())
-              p.copy(projectList = validNonProvExprs :+ provExpr, child = child)
+              p.copy(
+                projectList = (validNonProvExprs :+ provExpr)
+                  .asInstanceOf[Seq[NamedExpression]],
+                child = child
+              )
             } else if (validNonProvExprs.size != nonProvExprs.size) {
               // If some expressions were removed because they reference columns that are no longer present
               // in the child output, we need to update the project list
-              p.copy(projectList = validNonProvExprs, child = child)
+              p.copy(
+                projectList =
+                  validNonProvExprs.asInstanceOf[Seq[NamedExpression]],
+                child = child
+              )
             } else {
               p
             }
@@ -509,9 +521,11 @@ case class LogicalPlanWithProvenance(
 
           if (childHasProv && !aggregateHasProv) {
             val provAttr = getProvAttr(child, provenanceColName)
+            val safeAggregateExprs =
+              aggregateExprs.asInstanceOf[Seq[Expression]]
 
             // Extract all aggregate functions from the aggregate expressions
-            val allAggFunctions = aggregateExprs.flatMap { expr =>
+            val allAggFunctions = safeAggregateExprs.flatMap { expr =>
               expr.collect { case ae: AggregateExpression =>
                 ae.aggregateFunction
               }
@@ -620,10 +634,10 @@ case class LogicalPlanWithProvenance(
             }
 
             // Injection of the final provenance tag
-            val newAggregateExprs = aggregateExprs :+ Alias(
+            val newAggregateExprs = (safeAggregateExprs :+ Alias(
               finalProvExpr,
               provenanceColName
-            )()
+            )()).asInstanceOf[Seq[NamedExpression]]
             Aggregate(groupingExprs, newAggregateExprs, child, hint)
 
           } else {
@@ -732,9 +746,10 @@ case class LogicalPlanWithProvenance(
           if (childHasProv) {
             val provAttr = getProvAttr(child, provenanceColName)
             val rawWindowColName = s"${provenanceColName}_raw_window"
+            val safeWindowExprs = windowExprs.asInstanceOf[Seq[Expression]]
 
             // We filter out any existing provenance expressions from the window expressions to avoid duplicates
-            val userWindowExprs = windowExprs.filter {
+            val userWindowExprs = safeWindowExprs.filter {
               case Alias(_, name) =>
                 name != provenanceColName && name != rawWindowColName
               case attr: Attribute =>
@@ -766,9 +781,15 @@ case class LogicalPlanWithProvenance(
             // attribute to avoid stale exprIds in nested window rewrites.
             val rawWindowTag = Alias(windowProvExpr, provenanceColName)()
 
-            val windowProv =
-              w.copy(windowExpressions = userWindowExprs :+ rawWindowTag)
+            // We create a new sequence of window expressions that includes the
+            // user-defined expressions and the new raw window tag
+            val finalWindowExprs = (userWindowExprs :+ rawWindowTag).map {
+              case named: NamedExpression => named
+              case rawExpr => Alias(rawExpr, "unnamed_window_expr")()
+            }
 
+            // We create a new Window node with the updated window expressions and the same child
+            val windowProv = w.copy(windowExpressions = finalWindowExprs)
             Project(
               windowProv.output.filter(_.name != provenanceColName) :+ Alias(
                 provenanceBuilder.windowFinalize(rawWindowTag.toAttribute),
