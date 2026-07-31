@@ -203,10 +203,15 @@ case class LogicalPlanWithProvenance(
             // If the project list contains a star, we need to expand it to include all columns
             // while carefully preserving any other explicit columns (like those added by withColumn)
             val expandedProjectList = safeProjectList.flatMap {
-              case _: UnresolvedStar => child.output.map(attr => Alias(attr, attr.name)())
-              case other             => Seq(other)
+              case _: UnresolvedStar =>
+                child.output.map(attr => Alias(attr, attr.name)())
+              case other => Seq(other)
             }
-            p.copy(projectList = expandedProjectList.asInstanceOf[Seq[NamedExpression]], child = child)
+            p.copy(
+              projectList =
+                expandedProjectList.asInstanceOf[Seq[NamedExpression]],
+              child = child
+            )
           } else {
             // We check if the child has the provenance column and if the project itself already has it
             val childHasProv = hasProv(child, provenanceColName)
