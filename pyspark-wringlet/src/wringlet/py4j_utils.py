@@ -18,4 +18,4 @@ def _get_provenance_jvm_function(name: str, spark: SparkSession) -> T.Callable:
     Java gateway associated with Spark session.
     """
     jvm = _get_jvm_from_spark(spark)
-    return getattr(getattr(jvm, "org.dataprov.dp.sparkdataprovenance.ProvenanceApi"), name)
+    return getattr(getattr(jvm, "org.dataprov.dp.wringlet.ProvenanceApi"), name)

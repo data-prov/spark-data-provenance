@@ -3,6 +3,7 @@
 #
 
 PYTHON_VERSION ?= 3.12
+PYTHON ?= .venv/bin/python
 UV ?= uv
 PYTHON_PACKAGE_NAME ?= pyspark-data-provenance
 PYTHON_PACKAGE_VERSION ?= $(shell cat VERSION)
@@ -205,9 +206,9 @@ publish-testpypi: ## Publish built artifacts to TestPyPI
 	@$(UV) publish --publish-url https://test.pypi.org/legacy/
 
 install-local: ## Install the Python wheel locally
-	@python -mpip install -U pyspark
-	@python -mpip install --force-reinstall \
-		$(PYTHON_PACKAGE_NAME)==$(PYTHON_PACKAGE_VERSION)
+	@$(UV) pip install --python $(PYTHON) -U pyspark
+	@$(UV) pip install --python $(PYTHON) --force-reinstall \
+		.
 
 run-local: ## Run package demo
 	@mkdir -p logs

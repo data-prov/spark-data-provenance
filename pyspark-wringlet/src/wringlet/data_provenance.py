@@ -109,7 +109,7 @@ def data_provenance_session_builder(
         SparkSession.builder.config("spark.jars", jar_path)
         .config(
             "spark.sql.extensions",
-            "org.dataprov.dp.sparkdataprovenance.SparkProvenanceExtension",
+            "org.dataprov.dp.wringlet.SparkProvenanceExtension",
         )
         .config("spark.provenance.builder", provenance_builder)
     )
@@ -136,7 +136,7 @@ def get_minimal_sources(
         j_function = _get_provenance_jvm_function("getMinimalSources", spark)
         java_result_list = j_function(df._jdf, java_source_dfs, provenance_col)
     except Exception:
-        j_extractor = gw.jvm.org.dataprov.dp.sparkdataprovenance.ProvenanceExtractor
+        j_extractor = gw.jvm.org.dataprov.dp.wringlet.ProvenanceExtractor
         java_result_list = j_extractor.getMinimalSources(df._jdf, java_source_dfs, provenance_col)
 
     python_result_dfs = []
