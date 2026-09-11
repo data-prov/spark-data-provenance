@@ -114,11 +114,9 @@ def data_provenance_session_builder(
         .config("spark.provenance.builder", provenance_builder)
     )
 
+
 def get_minimal_sources(
-    df: DataFrame,
-    source_dfs: T.Sequence[DataFrame],
-    spark: SparkSession,
-    provenance_col: str | None = None
+    df: DataFrame, source_dfs: T.Sequence[DataFrame], spark: SparkSession, provenance_col: str | None = None
 ) -> T.List[DataFrame]:
     """
     Extracts the minimal rows from source DataFrames that contributed to the given final DataFrame.
@@ -129,7 +127,7 @@ def get_minimal_sources(
     gw = spark._sc._gateway
     if gw is None:
         raise RuntimeError("Spark context gateway is not initialized")
-    
+
     java_source_dfs = gw.jvm.java.util.ArrayList()
     for source in source_dfs:
         java_source_dfs.add(source._jdf)
@@ -140,11 +138,11 @@ def get_minimal_sources(
     except Exception:
         j_extractor = gw.jvm.org.dataprov.dp.sparkdataprovenance.ProvenanceExtractor
         java_result_list = j_extractor.getMinimalSources(df._jdf, java_source_dfs, provenance_col)
-    
+
     python_result_dfs = []
     for i in range(java_result_list.size()):
         python_result_dfs.append(DataFrame(java_result_list.get(i), spark))
-        
+
     return python_result_dfs
 
 
@@ -156,5 +154,3 @@ def _py_dataframe_extension_get_minimal_sources(
 
 
 setattr(DataFrame, "get_minimal_sources", _py_dataframe_extension_get_minimal_sources)
-
-
