@@ -56,7 +56,7 @@ The framework includes backward lineage capabilities allowing users to query fin
 From the repository root:
 
 ```bash
-cd scala-spark-data-provenance
+cd scala-spark-wringlet
 make clean           
 make init           
 make check           
@@ -67,7 +67,7 @@ make build
 ## Project Layout
 
 ```text
-scala-spark-data-provenance/
+scala-spark-wringlet/
     project/
     src/main/scala/org/dataprov/dp/sparkdataprovenance/
     src/test/scala/org/dataprov/dp/sparkdataprovenance/

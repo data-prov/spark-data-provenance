@@ -1,8 +1,8 @@
 #
-# https://github.com/data-prov/spark-data-provenance/blob/main/Makefile
+# https://github.com/data-prov/wringlet/blob/main/Makefile
 #
-SC_DIR ?= scala-spark-data-provenance
-PY_DIR ?= pyspark-data-provenance
+SC_DIR ?= scala-spark-wringlet
+PY_DIR ?= pyspark-wringlet
 SCALA_PACKAGE_NAME ?= dp-spark
 SCALA_PACKAGE_VERSION ?= $(shell cat $(SC_DIR)/VERSION)
 SCALA_MINOR_VERSION ?= $(shell cat $(SC_DIR)/SCALA_MINOR_VERSION)

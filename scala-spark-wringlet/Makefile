@@ -1,5 +1,5 @@
 #
-# https://github.com/data-prov/wringlet/blob/main/scala-spark-data-provenance/Makefile
+# https://github.com/data-prov/wringlet/blob/main/scala-spark-wringlet/Makefile
 #
 SCALA_MINOR_VERSION ?= $(shell cat SCALA_MINOR_VERSION)
 SCALA_PACKAGE_NAME ?= dp-spark

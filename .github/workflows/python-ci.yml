@@ -1,14 +1,14 @@
-name: Python CI (pyspark-data-provenance)
+name: Python CI (pyspark-wringlet)
 
 on:
   push:
     branches: ["**"]
     paths:
-      - "pyspark-data-provenance/**"
+      - "pyspark-wringlet/**"
       - ".github/workflows/python-ci.yml"
   pull_request:
     paths:
-      - "pyspark-data-provenance/**"
+      - "pyspark-wringlet/**"
       - ".github/workflows/python-ci.yml"
 
 jobs:
@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: pyspark-data-provenance
+        working-directory: pyspark-wringlet
 
     steps:
       - name: Checkout

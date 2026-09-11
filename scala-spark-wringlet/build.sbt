@@ -1,5 +1,5 @@
 //
-// File: https://github.com/data-prov/wringlet/blob/main/scala-spark-data-provenance/build.sbt
+// File: https://github.com/data-prov/wringlet/blob/main/scala-spark-wringlet/build.sbt
 //
 
 name := "dp-spark"

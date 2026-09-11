@@ -21,7 +21,7 @@ Created by [gh-md-toc](https://github.com/ekalinin/github-markdown-toc.go)
 
 ## Overview
 
-This [project](https://github.com/data-prov/spark-data-provenance)
+This [project](https://github.com/data-prov/wringlet)
 explores how Spark may be instrumented/complemented with fine-grained provenance
 features.
 
@@ -121,7 +121,7 @@ abstract provenance arrays into concrete, actionable source data for local debug
 
 ## References
 
-* [GitHub - Data Provenance - Spark (this Git repository)](https://github.com/data-prov/spark-data-provenance)
+* [GitHub - Data Provenance - Spark (this Git repository)](https://github.com/data-prov/wringlet)
 * [Pypi.org - pyspark-data-provenance package](https://pypi.org/project/pyspark-data-provenance/)
 * [Data Engineering Helpers - Knowledge Sharing - Java](https://github.com/data-engineering-helpers/ks-cheat-sheets/blob/main/programming/java-world/)
 * [Data Engineering Helpers - Knowledge Sharing - Python](https://github.com/data-engineering-helpers/ks-cheat-sheets/blob/main/programming/python/)
@@ -130,12 +130,12 @@ abstract provenance arrays into concrete, actionable source data for local debug
 
 ### Summary
 
-* [Scala package](https://github.com/data-prov/spark-data-provenance/blob/main/scala-spark-data-provenance/)
-  * [Scala package - GitHub - Specified Scala version](https://github.com/data-prov/spark-data-provenance/blob/main/scala-spark-data-provenance/SCALA_MINOR_VERSION)
-  * [Scala package - GitHub - Specified package version](https://github.com/data-prov/spark-data-provenance/blob/main/scala-spark-data-provenance/VERSION)
-* [Python package](https://github.com/data-prov/spark-data-provenance/blob/main/pyspark-data-provenance/)
-  * [Python package - GitHub - Specified Python version](https://github.com/data-prov/spark-data-provenance/blob/main/pyspark-data-provenance/.python-version)
-  * [Python package - GitHub - Specified package version](https://github.com/data-prov/spark-data-provenance/blob/main/pyspark-data-provenance/VERSION)
+* [Scala package](https://github.com/data-prov/wringlet/blob/main/scala-spark-wringlet/)
+  * [Scala package - GitHub - Specified Scala version](https://github.com/data-prov/wringlet/blob/main/scala-spark-wringlet/SCALA_MINOR_VERSION)
+  * [Scala package - GitHub - Specified package version](https://github.com/data-prov/wringlet/blob/main/scala-spark-wringlet/VERSION)
+* [Python package](https://github.com/data-prov/wringlet/blob/main/pyspark-wringlet/)
+  * [Python package - GitHub - Specified Python version](https://github.com/data-prov/wringlet/blob/main/pyspark-wringlet/.python-version)
+  * [Python package - GitHub - Specified package version](https://github.com/data-prov/wringlet/blob/main/pyspark-wringlet/VERSION)
   * [Python package - Pypi.org - Published package (`pyspark-data-provenance`)](https://pypi.org/project/pyspark-data-provenance/)
 
 ## Pre-requisites
@@ -152,7 +152,7 @@ abstract provenance arrays into concrete, actionable source data for local debug
   `sdk install sbt 1.12.5`
   * Scala
     * The Scala (minor) version is specified in the
-  [`scala-spark-data-provenance/SCALA_MINOR_VERSION` file](https://github.com/data-prov/spark-data-provenance/blob/main/scala-spark-data-provenance/SCALA_MINOR_VERSION)
+  [`scala-spark-wringlet/SCALA_MINOR_VERSION` file](https://github.com/data-prov/wringlet/blob/main/scala-spark-wringlet/SCALA_MINOR_VERSION)
     * Example of how to install Scala with SDK: `sdk install scala 2.13.18`
 * For the Python-related tooling (_e.g._, PySpark, Jupyter), the easiest is
   to install them with the native Python packages (_e.g._, on MacOS/Linux)
@@ -161,7 +161,7 @@ abstract provenance arrays into concrete, actionable source data for local debug
   [Data Engineering Helpers - Knowledge Sharing - Python](https://github.com/data-engineering-helpers/ks-cheat-sheets/blob/main/programming/python/)
   * Python native packages
     * The Scala (minor) version is specified in the
-  [`pyspark-data-provenance/.python-version` file](https://github.com/data-prov/spark-data-provenance/blob/main/pyspark-data-provenance/.python-version)
+  [`pyspark-wringlet/.python-version` file](https://github.com/data-prov/wringlet/blob/main/pyspark-wringlet/.python-version)
     * Example of how to install Python 3.12 on MacOS: `brew install python@3.12`
   * uv
     * Example of how to install uv on MacOS: `brew install uv`
@@ -181,7 +181,7 @@ make python-init-uv-python
 ```
 
 * Potentially bump the
-  [version of the Python package](https://github.com/data-prov/spark-data-provenance/blob/main/pyspark-data-provenance/VERSION)
+  [version of the Python package](https://github.com/data-prov/wringlet/blob/main/pyspark-wringlet/VERSION)
   with either of the following options (ordered by the general probability of
   occurrence in the development life-cycle, from the highest to the lowest)
   * Increment the dev version (_e.g._, from `2.4.3.dev5` to `2.4.3.dev6` or
@@ -213,7 +213,7 @@ make python-publish
 
 * However, the easiest way to publish the Python wheel is through the CI/CD
   pipeline, that is, the
-  [GitHub Actions Python publishing pipeline](https://github.com/data-prov/spark-data-provenance/actions/workflows/python-publish.yml).
+  [GitHub Actions Python publishing pipeline](https://github.com/data-prov/wringlet/actions/workflows/python-publish.yml).
   * That CI/CD pipeline is automatically triggered when creating a release on
   the Git repository
   * It may also be triggered manually by contributors of the Git repository

@@ -1,15 +1,15 @@
 #
-# https://github.com/data-prov/wringlet/blob/main/pyspark-data-provenance/Makefile
+# https://github.com/data-prov/wringlet/blob/main/pyspark-wringlet/Makefile
 #
 
 PYTHON_VERSION ?= 3.12
 UV ?= uv
 PYTHON_PACKAGE_NAME ?= pyspark-data-provenance
 PYTHON_PACKAGE_VERSION ?= $(shell cat VERSION)
-SCALA_MINOR_VERSION ?= $(shell cat ../scala-spark-data-provenance/SCALA_MINOR_VERSION)
+SCALA_MINOR_VERSION ?= $(shell cat ../scala-spark-wringlet/SCALA_MINOR_VERSION)
 SCALA_ORG ?= org.dataprov.dp
 SCALA_PACKAGE_NAME ?= dp-spark
-SCALA_PACKAGE_VERSION ?= $(shell cat ../scala-spark-data-provenance/VERSION)
+SCALA_PACKAGE_VERSION ?= $(shell cat ../scala-spark-wringlet/VERSION)
 SCALA_PACKAGE_JAR ?= $(SCALA_ORG):$(SCALA_PACKAGE_NAME)_$(SCALA_MINOR_VERSION):$(SCALA_PACKAGE_VERSION)
 
 PYPI_PROJECT_URL ?= https://pypi.org/project/$(PYTHON_PACKAGE_NAME)/

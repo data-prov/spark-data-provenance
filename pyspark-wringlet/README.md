@@ -26,7 +26,7 @@ This project is managed with `uv`.
 From the repository root:
 
 ```bash
-cd pyspark-data-provenance
+cd pyspark-wringlet
 make init-uv-python
 make init
 make check
@@ -37,7 +37,7 @@ make run
 ## Project Layout
 
 ```text
-pyspark-data-provenance/
+pyspark-wringlet/
     src/pyspark_data_provenance/
     tests/
     main.py
@@ -57,7 +57,7 @@ pyspark-data-provenance/
 ## Development life-cycle
 
 * In order to switch (bump) to a newer
-  [version of the Python package](https://github.com/data-prov/wringlet/blob/main/pyspark-data-provenance/VERSION),
+  [version of the Python package](https://github.com/data-prov/wringlet/blob/main/pyspark-wringlet/VERSION),
   the following are the main options, ordered by the general probability of
   occurrence in the development life-cycle, from the highest to the lowest)
   * Increment the dev version (_e.g._, from `2.4.3.dev5` to `2.4.3.dev6` or
@@ -70,7 +70,7 @@ pyspark-data-provenance/
   * Bump to major version (_e.g._, from `2.4.3.dev5` to `3.0.0`):
   `make bump-to-major-version`
 * Then, the version bump has to be cascaded to related files (typically,
-  [`pyproject.toml`](https://github.com/data-prov/wringlet/blob/main/pyspark-data-provenance/pyproject.toml))
+  [`pyproject.toml`](https://github.com/data-prov/wringlet/blob/main/pyspark-wringlet/pyproject.toml))
 
 ## PyPI package
 

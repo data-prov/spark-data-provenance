@@ -1,4 +1,4 @@
-name: Python Publish (pyspark-data-provenance)
+name: Python Publish (pyspark-wringlet)
 
 on:
   release:
@@ -15,7 +15,7 @@ jobs:
     environment: release
     defaults:
       run:
-        working-directory: pyspark-data-provenance
+        working-directory: pyspark-wringlet
 
     steps:
       - name: Checkout

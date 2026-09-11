@@ -1,14 +1,14 @@
-name: Scala CI (scala-spark-data-provenance)
+name: Scala CI (scala-spark-wringlet)
 
 on:
   push:
     branches: ["**"]
     paths:
-      - "scala-spark-data-provenance/**"
+      - "scala-spark-wringlet/**"
       - ".github/workflows/scala-ci.yml"
   pull_request:
     paths:
-      - "scala-spark-data-provenance/**"
+      - "scala-spark-wringlet/**"
       - ".github/workflows/scala-ci.yml"
 
 jobs:
@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: scala-spark-data-provenance
+        working-directory: scala-spark-wringlet
 
     steps:
       - name: Checkout

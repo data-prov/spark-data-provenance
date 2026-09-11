@@ -1,7 +1,7 @@
 #
-# File: https://github.com/data-prov/wringlet/blob/main/pyspark-data-provenance/src/pyspark_data_provenance/jobs/getting_started_job.py
+# File: https://github.com/data-prov/wringlet/blob/main/pyspark-wringlet/src/pyspark_data_provenance/jobs/getting_started_job.py
 #
-# See also https://github.com/data-prov/wringlet/blob/main/pyspark-data-provenance/notebooks/demo.ipynb
+# See also https://github.com/data-prov/wringlet/blob/main/pyspark-wringlet/notebooks/demo.ipynb
 #
 """
 Pyspark script to test the data provenance concept
