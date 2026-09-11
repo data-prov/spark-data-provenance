@@ -1,9 +1,9 @@
-package org.dataprov.dp.sparkdataprovenance
+package org.dataprov.dp.wringlet
 
-import org.dataprov.dp.sparkdataprovenance.ProvenanceApi._
+import org.dataprov.dp.wringlet.ProvenanceApi._
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
-import org.dataprov.dp.sparkdataprovenance.SparkSessionTestWrapper
+import org.dataprov.dp.wringlet.SparkSessionTestWrapper
 import org.scalatest.funspec.AnyFunSpec
 import org.scalatest.matchers.should.Matchers
 import com.github.mrpowers.spark.fast.tests.DataFrameComparer

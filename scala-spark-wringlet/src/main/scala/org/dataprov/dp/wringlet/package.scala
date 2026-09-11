@@ -4,7 +4,7 @@ import org.apache.spark.sql.DataFrame
 
 import scala.jdk.CollectionConverters._
 
-package object sparkdataprovenance {
+package object wringlet {
 
   // Implicit class to extend DataFrame with provenance-related methods
   // This allows us to call getMinimalSources directly on a DataFrame instance

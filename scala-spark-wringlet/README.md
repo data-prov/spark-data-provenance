@@ -69,8 +69,8 @@ make build
 ```text
 scala-spark-wringlet/
     project/
-    src/main/scala/org/dataprov/dp/sparkdataprovenance/
-    src/test/scala/org/dataprov/dp/sparkdataprovenance/
+    src/main/scala/org/dataprov/dp/wringlet/
+    src/test/scala/org/dataprov/dp/wringlet/
     target/
     tests/
     build.sbt

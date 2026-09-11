@@ -4,7 +4,7 @@ from typing import cast
 
 from pyspark.sql import SparkSession
 
-from pyspark_data_provenance.data_provenance import data_provenance_enabled
+from wringlet.data_provenance import data_provenance_enabled
 
 
 class FakeConf:

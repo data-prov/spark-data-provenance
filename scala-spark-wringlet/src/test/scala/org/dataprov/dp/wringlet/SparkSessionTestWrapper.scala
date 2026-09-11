@@ -1,8 +1,8 @@
-package org.dataprov.dp.sparkdataprovenance
+package org.dataprov.dp.wringlet
 
 import org.apache.spark.sql.SparkSession
 import org.apache.log4j.{Logger, Level}
-import org.dataprov.dp.sparkdataprovenance.SparkProvenanceExtension
+import org.dataprov.dp.wringlet.SparkProvenanceExtension
 
 trait SparkSessionTestWrapper {
   // Helper method to create a SparkSession with the ProvenanceExtension registered, 

@@ -1,4 +1,4 @@
-package org.dataprov.dp.sparkdataprovenance
+package org.dataprov.dp.wringlet
 
 import com.github.mrpowers.spark.fast.tests.DataFrameComparer
 import org.scalatest.funspec.AnyFunSpec
@@ -6,7 +6,7 @@ import org.scalatest.matchers.should.Matchers
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions.{col, lit, when}
 
-import org.dataprov.dp.sparkdataprovenance.ProvenanceApi._
+import org.dataprov.dp.wringlet.ProvenanceApi._
 
 class ProvenanceDistinctTest extends AnyFunSpec with Matchers with SparkSessionTestWrapper with DataFrameComparer with ProvenanceModeTestUtils {
   import spark.implicits._

@@ -1,5 +1,5 @@
 #
-# File: https://github.com/data-prov/wringlet/blob/main/pyspark-wringlet/src/pyspark_data_provenance/jobs/getting_started_job.py
+# File: https://github.com/data-prov/wringlet/blob/main/pyspark-wringlet/src/wringlet/jobs/getting_started_job.py
 #
 # See also https://github.com/data-prov/wringlet/blob/main/pyspark-wringlet/notebooks/demo.ipynb
 #
@@ -11,7 +11,7 @@ import datetime
 
 from pyspark.sql import SparkSession
 
-import pyspark_data_provenance as dp
+import wringlet as dp
 
 JOB_NAME = "getting_started_job"
 today_date: str = datetime.date.today().strftime("%Y-%m-%d")

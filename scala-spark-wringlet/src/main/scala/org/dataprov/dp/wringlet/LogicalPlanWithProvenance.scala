@@ -1,4 +1,4 @@
-package org.dataprov.dp.sparkdataprovenance
+package org.dataprov.dp.wringlet
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.analysis.UnresolvedStar
@@ -60,7 +60,7 @@ import org.apache.spark.sql.types.ArrayType
 import org.apache.spark.sql.types.BooleanType
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.types.StringType
-import org.dataprov.dp.sparkdataprovenance.ProvenanceApi._
+import org.dataprov.dp.wringlet.ProvenanceApi._
 
 case class LogicalPlanWithProvenance(
     spark: SparkSession,

@@ -1,4 +1,4 @@
-package org.dataprov.dp.sparkdataprovenance
+package org.dataprov.dp.wringlet
 
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions.col

@@ -38,7 +38,7 @@ make run
 
 ```text
 pyspark-wringlet/
-    src/pyspark_data_provenance/
+    src/wringlet/
     tests/
     main.py
     pyproject.toml

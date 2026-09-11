@@ -13,11 +13,14 @@ dependencies = [
 ]
 
 [project.scripts]
-getting_started_job = "pyspark_data_provenance.jobs.getting_started_job:main"
+getting_started_job = "wringlet.jobs.getting_started_job:main"
 
 [build-system]
 requires = ["uv_build>=0.10,<0.11"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "wringlet"
 
 [dependency-groups]
 dev = [
@@ -71,7 +74,7 @@ convention = "google"
 [tool.mypy]
 ignore_missing_imports = true
 plugins = [ "pandera.mypy", "pydantic.mypy" ]
-mypy_path = "src/pyspark_data_provenance/"
+mypy_path = "src/wringlet/"
 explicit_package_bases = true
 
 [tool.pytest.ini_options]

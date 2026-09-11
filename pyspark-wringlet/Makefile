@@ -212,6 +212,6 @@ install-local: ## Install the Python wheel locally
 run-local: ## Run package demo
 	@mkdir -p logs
 	@spark-submit --packages $(SCALA_PACKAGE_JAR) \
-		src/pyspark_data_provenance/jobs/getting_started_job.py | \
+		src/wringlet/jobs/getting_started_job.py | \
 		tee logs/getting_started_job.log
 

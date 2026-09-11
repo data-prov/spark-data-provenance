@@ -4,7 +4,7 @@ from contextlib import contextmanager
 
 from pyspark.sql import DataFrame, SparkSession
 
-from pyspark_data_provenance.py4j_utils import _get_provenance_jvm_function
+from wringlet.py4j_utils import _get_provenance_jvm_function
 
 DataFrameOrView = str | DataFrame
 

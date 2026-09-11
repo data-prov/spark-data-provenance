@@ -1,10 +1,10 @@
-package org.dataprov.dp.sparkdataprovenance
+package org.dataprov.dp.wringlet
 
 import org.apache.spark.sql.Column
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions.uuid
-import org.dataprov.dp.sparkdataprovenance.SparkConfUtils._
+import org.dataprov.dp.wringlet.SparkConfUtils._
 
 object ProvenanceApi {
   val provenanceEnabledSparkConf = "spark.provenance.enabled"

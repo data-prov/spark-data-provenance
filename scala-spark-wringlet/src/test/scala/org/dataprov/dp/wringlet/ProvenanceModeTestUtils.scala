@@ -1,8 +1,8 @@
-package org.dataprov.dp.sparkdataprovenance
+package org.dataprov.dp.wringlet
 
 import org.scalatest.funspec.AnyFunSpec
 
-import org.dataprov.dp.sparkdataprovenance.ProvenanceApi._
+import org.dataprov.dp.wringlet.ProvenanceApi._
 
 trait ProvenanceModeTestUtils { this: AnyFunSpec with SparkSessionTestWrapper =>
 

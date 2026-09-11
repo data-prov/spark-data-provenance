@@ -29,7 +29,7 @@ scala-build:
 	$(MAKE) -C $(SC_DIR) compile test build publish-local
 	@echo "Scala build complete."
 	@echo "Copying $(SCALA_PACKAGE_JAR) JAR to PySpark directory..."
-	cp -f $(SC_DIR)/target/scala-$(SCALA_MINOR_VERSION)/$(SCALA_PACKAGE_JAR) $(PY_DIR)/src/pyspark_data_provenance/jars/
+	cp -f $(SC_DIR)/target/scala-$(SCALA_MINOR_VERSION)/$(SCALA_PACKAGE_JAR) $(PY_DIR)/src/wringlet/jars/
 	@echo "$(SCALA_PACKAGE_JAR) JAR copy complete."
 
 python-clean:
@@ -87,7 +87,7 @@ python-test:
 	@echo "Running Python tests..."
 	$(MAKE) -C $(PY_DIR) test
 
-python-publish:
+python-publish: python-build
 	@echo "Publishing Python package to PyPI..."
 	$(MAKE) -C $(PY_DIR) publish
 
