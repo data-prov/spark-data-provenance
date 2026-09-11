@@ -39,7 +39,7 @@ You can easily switch between different provenance semantics without altering th
 
 The engine supports end-to-end provenance tracking across a wide range of Spark SQL and DataFrame APIs:
 * **Basic Operations**: `Project` (with aliasing), `Filter` (AND, OR, NOT, IS NULL), `Sort`.
-* **Joins**: `Inner`, `Outer`, `Left`, `Right`, `Cross`, `Left Semi Join` and `Left Anti Join`.
+* **Joins**: `Inner`, `Outer`, `Left`, `Right`, `Cross`, `Left Semi Join`.
 * **Aggregations**: `Aggregate` nodes with advanced witness election (`MIN`, `MAX`, `SUM`, `AVG`).
 * **Set Operations**: `Union`, `Intersect`, `Except`.
 * **Deduplication**: `Distinct` (SQL) and `dropDuplicates()` (DataFrame).

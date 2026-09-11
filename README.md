@@ -107,7 +107,7 @@ algebra operators:
 *   **Projection / Selection:** `SELECT` (`Project`), `FILTER` (AND, OR, NOT, IS NULL)
 *   **Sorting & Deduplication:** `ORDER BY` (`Sort`), `DISTINCT`
 *   **Aggregations:** `GROUP BY` (`Aggregate` with specific witness election like `MIN`, `MAX`, `SUM`, `AVG`)
-*   **Jointures:** `JOIN` (`Inner`, `Left Outer`, `Right Outer`, `Full Outer`, `Cross`, `Left Semi Join` and `Left Anti Join`)
+*   **Jointures:** `JOIN` (`Inner`, `Left Outer`, `Right Outer`, `Full Outer`, `Cross`, `Left Semi Join`)
 *   **Set Operations:** `UNION`, `INTERSECT`, `EXCEPT`
 *   **Analytics:** `Window` functions
 
